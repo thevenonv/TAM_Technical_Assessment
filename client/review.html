@@ -1,0 +1,287 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>PayPal Phase 1 - Review</title>
+    <style>
+      :root{
+        --bg1:#0b1220; --bg2:#121a2e;
+        --text:#e5e7eb; --muted:#aab1c2;
+        --border:rgba(255,255,255,.10);
+        --shadow: 0 18px 60px rgba(0,0,0,.35);
+        --radius:18px;
+        --accent:#7c3aed;
+        --good:#22c55e;
+        --bad:#ef4444;
+      }
+      *{box-sizing:border-box;}
+      body{
+        margin:0;
+        font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+        color:var(--text);
+        background:
+          radial-gradient(1000px 500px at 10% 0%, rgba(124,58,237,.35), transparent 60%),
+          radial-gradient(900px 500px at 90% 20%, rgba(34,197,94,.18), transparent 55%),
+          linear-gradient(180deg, var(--bg1), var(--bg2));
+        min-height:100vh;
+      }
+      .container{ max-width: 900px; margin: 0 auto; padding: 34px 18px 70px; }
+
+      .topbar{
+        display:flex; align-items:center; justify-content:space-between; gap:12px;
+        padding: 18px;
+        border:1px solid var(--border);
+        border-radius: var(--radius);
+        background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.03));
+        box-shadow: var(--shadow);
+      }
+      .topbar h1{ margin:0; font-size: 22px; letter-spacing:-.02em; }
+      .topbar .sub{ margin:6px 0 0; color:var(--muted); font-size: 13px; line-height:1.4; }
+
+      .pill{
+        padding: 8px 12px;
+        border-radius: 999px;
+        border:1px solid rgba(255,255,255,.12);
+        background: rgba(255,255,255,.04);
+        color:#e5e7eb;
+        font-size: 12px;
+        white-space:nowrap;
+      }
+
+      .grid{ margin-top: 18px; display:grid; grid-template-columns: 1fr; gap: 14px; }
+
+      .card{
+        border:1px solid var(--border);
+        border-radius: var(--radius);
+        background: linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.02));
+        box-shadow: 0 14px 40px rgba(0,0,0,.25);
+      }
+      .card .head{ padding: 16px 16px 0; }
+      .card .head h2{ margin:0 0 6px; font-size: 16px; }
+      .card .head p{ margin:0; color:var(--muted); font-size: 13px; line-height:1.45; }
+      .card .body{ padding: 16px; }
+
+      .row{
+        display:flex; justify-content:space-between; gap:10px;
+        padding: 10px 12px;
+        border-radius: 14px;
+        border:1px solid rgba(255,255,255,.08);
+        background: rgba(0,0,0,.18);
+        margin-top: 10px;
+      }
+      .row .label{ color:var(--muted); font-size: 13px; }
+      .row .value{ font-weight: 750; }
+
+      .total{
+        margin-top: 12px;
+        padding: 14px 12px;
+        border-radius: 14px;
+        border: 1px solid rgba(34,197,94,.35);
+        background: rgba(34,197,94,.10);
+        display:flex; justify-content:space-between; align-items:center; gap:10px;
+      }
+      .total .label{ color:#bbf7d0; font-size: 13px; }
+      .total .value{ font-size: 18px; font-weight: 900; }
+
+      .btns{ margin-top: 14px; display:flex; gap: 10px; flex-wrap: wrap; }
+      button{
+        border:0; cursor:pointer;
+        padding: 12px 14px;
+        border-radius: 14px;
+        font-weight: 800;
+        color: #0b1220;
+        background: linear-gradient(135deg, rgba(34,197,94,1), rgba(34,197,94,.75));
+      }
+      button.secondary{
+        background: rgba(255,255,255,.08);
+        color: var(--text);
+        border: 1px solid rgba(255,255,255,.12);
+      }
+      button:disabled{ opacity:.6; cursor:not-allowed; }
+
+      pre{
+        margin: 0;
+        padding: 14px;
+        border-radius: 14px;
+        border:1px solid rgba(255,255,255,.08);
+        background: rgba(0,0,0,.25);
+        overflow:auto;
+        color:#d1d5db;
+        font-size: 12px;
+        line-height: 1.45;
+      }
+      .small{ color:var(--muted); font-size:12px; margin-top:8px; line-height:1.4; }
+    </style>
+  </head>
+
+  <body>
+    <div class="container">
+      <div class="topbar">
+        <div>
+          <h1>Review your order</h1>
+          <div class="sub">We retrieve your shipping address, compute shipping, PATCH the PayPal order, then capture.</div>
+        </div>
+        <div class="pill">🧪 Sandbox · Review</div>
+      </div>
+
+      <div class="grid">
+        <div class="card">
+          <div class="head">
+            <h2>Order summary</h2>
+            <p>Shipping is calculated from your postal code (NY-based heuristic).</p>
+          </div>
+          <div class="body">
+            <div class="row"><div class="label">Order ID</div><div class="value" id="orderIdEl">—</div></div>
+            <div class="row"><div class="label">Product</div><div class="value" id="productEl">—</div></div>
+            <div class="row"><div class="label">Ship to</div><div class="value" id="shipToEl">—</div></div>
+            <div class="row"><div class="label">Item total</div><div class="value" id="itemEl">—</div></div>
+            <div class="row"><div class="label">Shipping</div><div class="value" id="shipEl">—</div></div>
+
+            <div class="total">
+              <div class="label">Final total</div>
+              <div class="value" id="totalEl">—</div>
+            </div>
+
+            <div class="btns">
+              <button id="confirmBtn" disabled>Confirm & Pay</button>
+              <button class="secondary" id="backBtn">← Back</button>
+            </div>
+            <div class="small">
+              If PayPal requires re-approval after PATCH, you’ll be redirected automatically (if your backend implements it).
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="head">
+            <h2>Debug log</h2>
+            <p>Useful to show your interviewer (debug_id, status, etc.).</p>
+          </div>
+          <div class="body">
+            <pre id="log"></pre>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      const SERVER_BASE = "http://localhost:3001";
+
+      const params = new URLSearchParams(window.location.search);
+      const orderID = params.get("orderID");
+      const itemTotal = params.get("itemTotal");
+      const currency = params.get("currency") || "USD";
+      const sku = params.get("sku") || "";
+      const name = params.get("name") || "";
+
+      const logEl = document.getElementById("log");
+      const confirmBtn = document.getElementById("confirmBtn");
+      const backBtn = document.getElementById("backBtn");
+
+      const orderIdEl = document.getElementById("orderIdEl");
+      const productEl = document.getElementById("productEl");
+      const shipToEl = document.getElementById("shipToEl");
+      const itemEl = document.getElementById("itemEl");
+      const shipEl = document.getElementById("shipEl");
+      const totalEl = document.getElementById("totalEl");
+
+      function log(x){
+        logEl.textContent += (typeof x === "string" ? x : JSON.stringify(x, null, 2)) + "\n";
+      }
+      function money(x){ return `${currency} ${Number(x).toFixed(2)}`; }
+
+      function computeShipping(postalCode, stateCode) {
+        const zip = String(postalCode || "").trim();
+        const zip5 = zip.match(/\d{5}/)?.[0];
+        if (!zip5) return "7.99";
+
+        const st = (stateCode || "").toUpperCase();
+        if (["AK", "HI"].includes(st)) return "19.99";
+        if (["PR", "VI", "GU", "AS", "MP"].includes(st)) return "24.99";
+
+        const firstDigit = zip5[0];
+        if (["0", "1", "2"].includes(firstDigit)) return "5.99";
+        if (["3", "4"].includes(firstDigit)) return "7.49";
+        if (["5", "6"].includes(firstDigit)) return "9.49";
+        if (["7", "8", "9"].includes(firstDigit)) return "11.99";
+        return "7.99";
+      }
+
+      async function loadOrder() {
+        const res = await fetch(`${SERVER_BASE}/api/orders/${orderID}`);
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Get order failed");
+
+        const address = data.address || {};
+        const zip = address.postal_code || "";
+        const state = address.admin_area_1 || "";
+        const city = address.admin_area_2 || "";
+        const line1 = address.address_line_1 || "";
+        const country = address.country_code || "";
+
+        const shippingValue = computeShipping(zip, state);
+        const total = (Number(itemTotal) + Number(shippingValue)).toFixed(2);
+
+        orderIdEl.textContent = orderID;
+        productEl.textContent = name ? `${name}${sku ? ` (${sku})` : ""}` : (sku || "—");
+        shipToEl.textContent = `${line1}${line1 ? ", " : ""}${city} ${state} ${zip} ${country}`.trim() || "(not provided yet)";
+        itemEl.textContent = money(itemTotal);
+        shipEl.textContent = money(shippingValue);
+        totalEl.textContent = money(total);
+
+        confirmBtn.disabled = false;
+        return { shippingValue };
+      }
+
+      async function patchShipping(shippingValue) {
+        const res = await fetch(`${SERVER_BASE}/api/orders/${orderID}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ currency, itemTotal, shippingValue })
+        });
+
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Patch failed");
+        log({ patched: true, debugId: data.debugId });
+        return true;
+      }
+
+      async function capture() {
+        const res = await fetch(`${SERVER_BASE}/api/orders/${orderID}/capture`, { method: "POST" });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Capture failed");
+        log({ captured: true, status: data.status, debugId: data.debugId });
+        alert("Payment captured! Status: " + data.status);
+      }
+
+      (async () => {
+        if (!orderID) return alert("Missing orderID");
+
+        backBtn.onclick = () => window.location.href = "index.html";
+
+        try {
+          const { shippingValue } = await loadOrder();
+
+          confirmBtn.onclick = async () => {
+            confirmBtn.disabled = true;
+            confirmBtn.textContent = "Processing…";
+            try {
+              await patchShipping(shippingValue);
+              await capture();
+              confirmBtn.textContent = "Done";
+            } catch (e) {
+              console.error(e);
+              alert(e.message);
+              confirmBtn.disabled = false;
+              confirmBtn.textContent = "Confirm & Pay";
+            }
+          };
+        } catch (e) {
+          console.error(e);
+          alert(e.message);
+        }
+      })();
+    </script>
+  </body>
+</html>

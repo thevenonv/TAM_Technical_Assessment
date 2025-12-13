@@ -1,0 +1,654 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>PayPal Phase 2 - Unified Checkout</title>
+    <style>
+      :root{
+        --bg1:#0b1220;
+        --bg2:#121a2e;
+        --card:#0f172a;
+        --card2:#111c33;
+        --text:#e5e7eb;
+        --muted:#aab1c2;
+        --accent:#7c3aed;
+        --accent2:#22c55e;
+        --warn:#f59e0b;
+        --danger:#ef4444;
+        --border:rgba(255,255,255,.10);
+        --shadow: 0 18px 60px rgba(0,0,0,.35);
+        --radius:18px;
+      }
+
+      *{ box-sizing:border-box; }
+      body{
+        margin:0;
+        font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji";
+        color:var(--text);
+        background:
+          radial-gradient(1000px 500px at 20% 0%, rgba(124,58,237,.35), transparent 60%),
+          radial-gradient(900px 500px at 90% 20%, rgba(34,197,94,.18), transparent 55%),
+          linear-gradient(180deg, var(--bg1), var(--bg2));
+        min-height:100vh;
+      }
+
+      .container{
+        max-width: 1100px;
+        margin: 0 auto;
+        padding: 34px 18px 70px;
+      }
+
+      .hero{
+        display:flex;
+        gap:18px;
+        align-items:flex-start;
+        justify-content:space-between;
+        padding: 22px;
+        border:1px solid var(--border);
+        border-radius: var(--radius);
+        background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.03));
+        box-shadow: var(--shadow);
+      }
+
+      .hero h1{
+        margin:0 0 8px;
+        font-size: clamp(22px, 2.2vw, 30px);
+        letter-spacing: -0.02em;
+      }
+      .hero p{
+        margin:0;
+        color:var(--muted);
+        line-height:1.55;
+      }
+
+      .badge{
+        display:inline-flex;
+        align-items:center;
+        gap:8px;
+        padding: 8px 12px;
+        background: rgba(124,58,237,.18);
+        border: 1px solid rgba(124,58,237,.35);
+        color:#ddd6fe;
+        border-radius: 999px;
+        font-size: 12px;
+        white-space: nowrap;
+      }
+
+      .pill{
+        display:inline-flex;
+        align-items:center;
+        gap:6px;
+        padding: 6px 10px;
+        border-radius: 999px;
+        border: 1px solid rgba(255,255,255,.10);
+        background: rgba(255,255,255,.04);
+        font-size: 12px;
+        color: #e5e7eb;
+        white-space:nowrap;
+      }
+
+      .grid{
+        margin-top: 22px;
+        display:grid;
+        grid-template-columns: 1.4fr .9fr;
+        gap: 18px;
+      }
+      @media (max-width: 980px){
+        .grid{ grid-template-columns: 1fr; }
+      }
+
+      .stack{ margin-top: 18px; display:grid; grid-template-columns: 1fr; gap: 18px; }
+
+      .card{
+        border:1px solid var(--border);
+        border-radius: var(--radius);
+        background: linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.02));
+        box-shadow: 0 14px 40px rgba(0,0,0,.25);
+      }
+
+      .card-header{ padding: 18px 18px 0; }
+      .card-title{
+        margin: 0 0 6px;
+        font-size: 16px;
+        letter-spacing: -0.01em;
+      }
+      .card-subtitle{
+        margin:0;
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.45;
+      }
+      .card-body{ padding: 18px; }
+
+      .carousel{
+        display:flex;
+        gap: 14px;
+        overflow:auto;
+        padding: 10px 4px 14px;
+        scroll-snap-type: x mandatory;
+      }
+      .carousel::-webkit-scrollbar{ height:10px; }
+      .carousel::-webkit-scrollbar-thumb{
+        background: rgba(255,255,255,.10);
+        border-radius: 999px;
+      }
+
+      .product{
+        width: 200px;
+        flex: 0 0 auto;
+        scroll-snap-align: start;
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        background: linear-gradient(180deg, rgba(15,23,42,.75), rgba(15,23,42,.35));
+        padding: 12px;
+        cursor: pointer;
+        transition: transform .15s ease, border-color .15s ease, background .15s ease;
+      }
+      .product:hover{ transform: translateY(-2px); border-color: rgba(124,58,237,.45); }
+      .product.selected{
+        border-color: rgba(34,197,94,.60);
+        background: linear-gradient(180deg, rgba(34,197,94,.12), rgba(15,23,42,.45));
+      }
+
+      .product img{
+        width: 100%;
+        height: 120px;
+        object-fit: cover; /* plus joli/cohérent que contain */
+        border-radius: 12px;
+        background: rgba(255,255,255,.04);
+        border: 1px solid rgba(255,255,255,.06);
+      }
+
+      .product .name{
+        margin: 10px 0 6px;
+        font-weight: 700;
+        font-size: 14px;
+        letter-spacing: -.01em;
+      }
+      .product .meta{
+        display:flex;
+        align-items:center;
+        justify-content:space-between;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .summaryRow{
+        display:flex;
+        justify-content:space-between;
+        gap:10px;
+        padding: 10px 12px;
+        border: 1px solid rgba(255,255,255,.08);
+        border-radius: 14px;
+        background: rgba(0,0,0,.18);
+        margin-top: 12px;
+      }
+      .summaryRow .label{ color: var(--muted); font-size: 13px; }
+      .summaryRow .value{ font-weight: 750; }
+
+      .total{
+        margin-top: 12px;
+        padding: 14px 12px;
+        border-radius: 14px;
+        border: 1px solid rgba(34,197,94,.35);
+        background: rgba(34,197,94,.10);
+        display:flex;
+        align-items:center;
+        justify-content:space-between;
+        gap:10px;
+      }
+      .total .label{ color:#bbf7d0; font-size: 13px; }
+      .total .value{ font-size: 18px; font-weight: 900; }
+
+      .note{
+        margin-top: 14px;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.45;
+      }
+
+      .box{
+        margin-top: 12px;
+        padding: 14px;
+        border-radius: 16px;
+        border: 1px dashed rgba(255,255,255,.18);
+        background: rgba(255,255,255,.03);
+      }
+
+      /* Phase 2: form + tabs */
+      .formGrid{
+        margin-top: 12px;
+        display:grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
+      }
+      @media (max-width: 900px){ .formGrid{ grid-template-columns:1fr; } }
+      label{
+        display:block;
+        font-size: 12px;
+        color: var(--muted);
+        margin-bottom: 6px;
+      }
+      input, select{
+        width:100%;
+        padding: 10px 12px;
+        border-radius: 12px;
+        border: 1px solid rgba(255,255,255,.12);
+        background: rgba(0,0,0,.18);
+        color: var(--text);
+        outline:none;
+      }
+      input:focus, select:focus{ border-color: rgba(124,58,237,.55); }
+
+      .btn{
+        margin-top: 12px;
+        border:0;
+        cursor:pointer;
+        padding: 12px 14px;
+        border-radius: 14px;
+        font-weight: 900;
+        color: #081018;
+        background: linear-gradient(135deg, rgba(34,197,94,1), rgba(34,197,94,.75));
+      }
+      .btn.secondary{
+        background: rgba(255,255,255,.08);
+        color: var(--text);
+        border: 1px solid rgba(255,255,255,.12);
+      }
+      .btn:disabled{ opacity:.6; cursor:not-allowed; }
+
+      .notice{
+        margin-top: 12px;
+        padding: 12px;
+        border-radius: 14px;
+        border: 1px solid rgba(255,255,255,.12);
+        background: rgba(0,0,0,.18);
+        color: var(--text);
+        font-size: 13px;
+        line-height: 1.45;
+      }
+      .notice.warn{ border-color: rgba(245,158,11,.35); background: rgba(245,158,11,.10); }
+      .notice.danger{ border-color: rgba(239,68,68,.35); background: rgba(239,68,68,.10); }
+      .notice.success{ border-color: rgba(34,197,94,.35); background: rgba(34,197,94,.10); }
+
+      .tabs{
+        display:flex;
+        gap:10px;
+        margin-top: 12px;
+      }
+      .tab{
+        flex:1;
+        border: 1px solid rgba(255,255,255,.12);
+        border-radius: 14px;
+        padding: 10px 12px;
+        cursor:pointer;
+        background: rgba(255,255,255,.04);
+        color: var(--text);
+        font-weight: 850;
+      }
+      .tab.active{
+        border-color: rgba(124,58,237,.55);
+        background: linear-gradient(180deg, rgba(124,58,237,.18), rgba(255,255,255,.04));
+      }
+
+      .hidden{ display:none !important; }
+
+      .cardFieldsGrid{
+        margin-top: 12px;
+        display:grid;
+        grid-template-columns: 1.3fr .7fr;
+        gap: 12px;
+      }
+      @media (max-width: 900px){ .cardFieldsGrid{ grid-template-columns:1fr; } }
+
+      .fieldBox{
+        padding: 12px;
+        border-radius: 14px;
+        border: 1px solid rgba(255,255,255,.12);
+        background: rgba(255,255,255,.03);
+      }
+      .fieldTitle{ font-size: 12px; color: var(--muted); margin: 0 0 8px; }
+      .mini{ font-size: 12px; color: var(--muted); margin-top: 8px; }
+    </style>
+  </head>
+
+  <body>
+    <div class="container">
+      <div class="hero">
+        <div>
+          <div class="badge">🧪 Sandbox · Phase 2 Unified Checkout</div>
+          <h1 style="margin-top:10px;">Select a product, enter buyer info, pay</h1>
+          <p>Phase 2: the buyer fills their info <b>before</b> choosing <b>PayPal</b> or <b>Card</b>.</p>
+        </div>
+            <div class="pill" style="display:flex; gap:10px;">
+                <span>💳 PayPal JS SDK • Buttons + Card Fields</span>
+                <a href="/backoffice.html" style="text-decoration:none;">
+                    <button class="btn secondary" type="button" style="margin:0;">Back-office →</button>
+                </a>
+            </div>
+        </div>
+
+      <div class="grid">
+        <!-- LEFT: Product carousel -->
+        <div class="card">
+          <div class="card-header">
+            <h2 class="card-title">Products</h2>
+            <p class="card-subtitle">Scroll → click a product to select it.</p>
+          </div>
+          <div class="card-body">
+            <div id="carousel" class="carousel"></div>
+          </div>
+        </div>
+
+        <!-- RIGHT: Summary -->
+        <div class="card">
+          <div class="card-header">
+            <h2 class="card-title">Summary</h2>
+            <p class="card-subtitle">Total updates with your selection. Shipping comes later (Review page).</p>
+          </div>
+
+          <div class="card-body">
+            <div class="summaryRow">
+              <div class="label">Selected item</div>
+              <div class="value" id="selectedName">—</div>
+            </div>
+
+            <div class="summaryRow">
+              <div class="label">Currency</div>
+              <div class="value" id="currencyLabel">USD</div>
+            </div>
+
+            <div class="total">
+              <div class="label">Item total (before shipping)</div>
+              <div class="value" id="itemTotal">$0.00</div>
+            </div>
+
+            <div class="note">
+              Shipping is calculated on <b>review.html</b> from the PayPal order shipping address, then PATCH + CAPTURE.
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Phase 2 stack -->
+      <div class="stack">
+        <!-- Buyer info -->
+        <div class="card">
+          <div class="card-header">
+            <h2 class="card-title">Buyer information</h2>
+            <p class="card-subtitle">Required before showing payment options.</p>
+          </div>
+          <div class="card-body">
+            <form id="buyerForm">
+              <div class="formGrid">
+                <div>
+                  <label>Full name</label>
+                  <input id="fullName" placeholder="John Doe" required />
+                </div>
+                <div>
+                  <label>Email (optional)</label>
+                  <input id="email" placeholder="john@example.com" />
+                </div>
+
+                <div>
+                  <label>Address line 1</label>
+                  <input id="addr1" placeholder="123 Main St" required />
+                </div>
+                <div>
+                  <label>Address line 2 (optional)</label>
+                  <input id="addr2" placeholder="Apt 4B" />
+                </div>
+
+                <div>
+                  <label>City</label>
+                  <input id="city" placeholder="New York" required />
+                </div>
+                <div>
+                  <label>State (2 letters)</label>
+                  <input id="state" placeholder="NY" maxlength="2" required />
+                </div>
+
+                <div>
+                  <label>Postal code</label>
+                  <input id="zip" placeholder="10001" required />
+                </div>
+                <div>
+                  <label>Country</label>
+                  <select id="country" required>
+                    <option value="US" selected>United States (US)</option>
+                  </select>
+                </div>
+              </div>
+              <div id="formErrors" style="display:none; margin-top:10px; color:#ffb4b4;"></div>
+              <button class="btn" type="submit" id="continueBtn">Continue to payment</button>
+              <div id="buyerStatus" class="notice hidden"></div>
+            </form>
+          </div>
+        </div>
+
+        <!-- Payment methods -->
+        <div class="card hidden" id="paymentSection">
+          <div class="card-header">
+            <h2 class="card-title">Choose payment method</h2>
+            <p class="card-subtitle">PayPal Buttons or Card Fields — same Orders API backend.</p>
+          </div>
+          <div class="card-body">
+            <div class="tabs">
+              <button class="tab active" type="button" id="tabPayPal">PayPal</button>
+              <button class="tab" type="button" id="tabCard">Card</button>
+            </div>
+
+            <div id="panelPayPal" class="box">
+              <div class="notice">
+                You’ll approve on PayPal, then we redirect you to <b>review.html</b> for shipping update + capture.
+              </div>
+              <div style="margin-top:12px;" id="paypal-button-container"></div>
+              <div id="paypalStatus" class="notice hidden"></div>
+            </div>
+
+            <div id="panelCard" class="box hidden">
+              <div class="notice">
+                Enter card details. Clicking “Pay with card” will submit via PayPal Card Fields.
+              </div>
+
+              <div id="cardEligibility" class="notice warn hidden"></div>
+
+              <div class="cardFieldsGrid">
+                <div>
+                  <div class="fieldBox">
+                    <div class="fieldTitle">Card number</div>
+                    <div id="card-number"></div>
+                  </div>
+
+                  <div style="height:10px;"></div>
+
+                  <div class="fieldBox">
+                    <div class="fieldTitle">Expiration</div>
+                    <div id="card-expiry"></div>
+                  </div>
+
+                  <div style="height:10px;"></div>
+
+                  <div class="fieldBox">
+                    <div class="fieldTitle">CVV</div>
+                    <div id="card-cvv"></div>
+                  </div>
+
+                  <div class="mini">Fields are rendered by PayPal JS SDK (sandbox).</div>
+                </div>
+
+                <div>
+                  <button class="btn" type="button" id="cardPayBtn">Pay with card</button>
+                  <div id="cardStatus" class="notice hidden"></div>
+                  <button class="btn secondary" type="button" id="editBuyerBtn" style="margin-top:10px;">Edit buyer info</button>
+                </div>
+              </div>
+            </div>
+
+            <div id="globalStatus" class="notice hidden"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      const SERVER_BASE = "http://localhost:3001";
+      const CURRENCY = "USD";
+
+      // ✅ set cohérent d’images (Unsplash) — propre, même style
+      const products = [
+        {
+            id: "hoodie",
+            name: "Urban Hoodie",
+            price: "10.00",
+            img: "https://premiumproductphotos.com/wp-content/uploads/2023/07/black-hoodie-toronto-product-photography.webp?auto=format&fit=crop&w=800&q=80"
+        },
+        {
+            id: "cap",
+            name: "Everyday Cap",
+            price: "7.50",
+            img: "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTDLq6rc-_DJu1LlHpba0caZ9Hbz812TY2NQA&s?auto=format&fit=crop&w=800&q=80"
+        },
+        {
+            id: "backpack",
+            name: "Minimal Backpack",
+            price: "18.00",
+            img: "https://images.unsplash.com/photo-1622560480605-d83c853bc5c3?auto=format&fit=crop&w=800&q=80"
+        },
+        {
+            id: "sneakers",
+            name: "Running Sneakers",
+            price: "25.00",
+            img: "https://upload.wikimedia.org/wikipedia/commons/thumb/5/59/Air_Jordan_1_Banned.jpg/2560px-Air_Jordan_1_Banned.jpg?auto=format&fit=crop&w=800&q=80"
+        },
+        {
+            id: "bottle",
+            name: "Steel Water Bottle",
+            price: "12.00",
+            img: "https://images.unsplash.com/photo-1602143407151-7111542de6e8?auto=format&fit=crop&w=800&q=80"
+        }
+        ];
+
+      let selected = products[0];
+    </script>
+
+    <!-- ✅ IMPORTANT: one single PayPal JS SDK load (buttons + card-fields) -->
+    <script src="https://www.paypal.com/sdk/js?client-id=ASbueoig2hEMWPriVDVgiBGKhULs18A7JSiH-C3rCz7otPKDA1wIBWM-q91MBhyei0a3hsORON91VV6q&currency=USD&intent=capture&components=buttons,card-fields"></script>
+
+    <!-- Phase 2 logic -->
+    <script src="phase2.js"></script>
+
+    <script>
+        const els = {
+        fullName: document.getElementById("fullName"),
+        email: document.getElementById("email"),
+        line1: document.getElementById("addr1"),
+        line2: document.getElementById("addr2"),
+        city: document.getElementById("city"),
+        state: document.getElementById("state"),
+        postal: document.getElementById("zip"),
+        country: document.getElementById("country"),
+        btn: document.getElementById("continueBtn"),
+        errors: document.getElementById("formErrors"),
+        };
+        
+        let hasSubmitted = false;
+        const isUS = () => (els.country?.value || "US") === "US";
+
+        function normalize() {
+            if (els.state) els.state.value = els.state.value.toUpperCase().replace(/[^A-Z]/g, "").slice(0, 2);
+            if (els.postal) els.postal.value = els.postal.value.replace(/[^0-9-]/g, "").slice(0, 10);
+            if (els.city) els.city.value = els.city.value.replace(/[0-9]/g, "");
+        }
+
+        function validate() {
+            const errs = [];
+
+            if (!els.fullName.value.trim()) errs.push("Full name is required.");
+            if (!els.line1.value.trim()) errs.push("Address line 1 is required.");
+            if (!els.city.value.trim()) errs.push("City is required.");
+
+            if (els.email.value.trim()) {
+                if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(els.email.value.trim())) {
+                errs.push("Email format is invalid.");
+                }
+            }
+
+            if (isUS()) {
+                if (!/^[A-Z]{2}$/.test(els.state.value)) {
+                errs.push("State must be 2 letters (ex: NY).");
+                }
+                if (!/^\d{5}(-\d{4})?$/.test(els.postal.value)) {
+                errs.push("Postal code must be 5 digits.");
+                }
+            }
+
+            const ok = errs.length === 0;
+
+            // ⬇️ IMPORTANT : on n’affiche les erreurs QUE si submit a déjà eu lieu
+            if (hasSubmitted) {
+                els.errors.style.display = ok ? "none" : "block";
+                els.errors.innerHTML = ok ? "" : "⚠️ " + errs.join("<br>• ");
+            } else {
+                els.errors.style.display = "none";
+                els.errors.innerHTML = "";
+            }
+
+            els.btn.disabled = false;
+            return ok;
+            }
+
+        ["input", "change", "blur"].forEach(evt => {
+        Object.values(els).forEach(el => {
+            if (el && el.tagName && el !== els.btn && el !== els.errors) {
+            el.addEventListener(evt, () => {
+                normalize();
+                validate();
+            });
+            }
+        });
+        });
+
+        document.getElementById("buyerForm").addEventListener("submit", (e) => {
+        hasSubmitted = true; // 🔥 clé du comportement UX
+        normalize();
+
+        if (!validate()) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+        });
+
+        normalize();
+        validate();
+
+        const buyerForm = document.getElementById("buyerForm");
+        const paymentSection = document.getElementById("paymentSection");
+
+        buyerForm.addEventListener("submit", (e) => {
+        e.preventDefault();          // ⛔ stop le submit HTML
+        hasSubmitted = true;
+
+        normalize();
+        const ok = validate();
+
+        if (!ok) {
+            // ❌ INVALID → on reste sur le formulaire
+            paymentSection.classList.add("hidden");
+            return;
+        }
+
+        // ✅ VALID → on ouvre la section paiement
+        paymentSection.classList.remove("hidden");
+
+        document.getElementById("buyerStatus").className = "notice success";
+        document.getElementById("buyerStatus").textContent =
+            "✔ Buyer information validated. Choose your payment method.";
+        document.getElementById("buyerStatus").classList.remove("hidden");
+        });
+
+    </script>
+
+  </body>
+</html>
