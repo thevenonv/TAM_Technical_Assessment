@@ -88,7 +88,7 @@ async function renderRefundHistory(cellEl, refundIds) {
 
 async function renderRefundHistoryFromCapture(cellEl, captureId) {
   if (!captureId) {
-    cellEl.textContent = "No refunds yet";
+    cellEl.textContent = "No refunds";
     return;
   }
 
@@ -105,30 +105,28 @@ async function renderRefundHistoryFromCapture(cellEl, captureId) {
     const refunds = data.refunds?.refunds || data.refunds?.items || data.refunds || [];
 
     if (!refunds.length) {
-      cellEl.textContent = "No refunds yet";
+      cellEl.textContent = "No refunds";
       return;
     }
 
     cellEl.innerHTML = refunds
       .map((r) => {
-        const status = r.status || "?";
         const amt = r.amount?.value != null ? Number(r.amount.value).toFixed(2) : "?";
         const cur = r.amount?.currency_code || "USD";
-        const id = r.id || "";
         const t = r.create_time ? fmtTime(r.create_time) : "";
         return `
         <div style="display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin-bottom:6px;">
-          ${pill(status)}
           <span class="pill">${cur} ${amt}</span>
-          <span class="pill"><code>${id}</code></span>
           ${t ? `<span class="pill">${t}</span>` : ""}
         </div>
       `;
       })
       .join("");
   } catch (err) {
-    // If PayPal says 404/NO REFUNDS, server already returns ok with empty list.
-    cellEl.innerHTML = `<span class="pill danger">${err.message}</span>`;
+    // If PayPal says 404/NO REFUNDS, render empty
+    cellEl.innerHTML = err.message && err.message.includes("404")
+      ? "No refunds yet"
+      : `<span class="pill danger">${err.message}</span>`;
   }
 }
 
@@ -140,16 +138,12 @@ function renderRefundHistoryInline(cellEl, refunds) {
 
   cellEl.innerHTML = refunds
     .map((r) => {
-      const status = r.status || "?";
       const amt = r.amount?.value != null ? Number(r.amount.value).toFixed(2) : "?";
       const cur = r.amount?.currency_code || "USD";
-      const id = r.id || r.captureId || "";
       const t = r.create_time ? fmtTime(r.create_time) : "";
       return `
         <div style="display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin-bottom:6px;">
-          ${pill(status)}
           <span class="pill">${cur} ${amt}</span>
-          <span class="pill"><code>${id}</code></span>
           ${t ? `<span class="pill">${t}</span>` : ""}
         </div>
       `;
@@ -159,7 +153,7 @@ function renderRefundHistoryInline(cellEl, refunds) {
 
 async function loadTransactions() {
   tbody.innerHTML = `<tr><td colspan="7">Loading…</td></tr>`;
-  const res = await fetch(`${SERVER_BASE}/api/admin/transactions`);
+  const res = await fetch(`${SERVER_BASE}/api/admin/transactions?pageSize=1000`);
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || "Failed to load transactions");
 
@@ -198,8 +192,6 @@ async function loadTransactions() {
   for (const tx of filtered) {
     const tr = document.createElement("tr");
 
-    const statusHtml = tx.error ? `<span class="pill danger">ERROR</span>` : pill(tx.status);
-
     const captureId = tx.captureId || "";
     const refundCellId = `rh-${captureId.replace(/[^a-zA-Z0-9_-]/g, "") || Math.random().toString(16).slice(2)}`;
 
@@ -207,18 +199,36 @@ async function loadTransactions() {
     const isRefundFlow = Number.isFinite(amtNum) && amtNum < 0;
     const historyId = isRefundFlow ? (tx.orderID || captureId) : captureId;
     const refundsForCapture = refundMap[captureId] || refundMap[tx.orderID];
+    const refundedSum = (refundsForCapture || []).reduce(
+      (s, r) => s + Math.abs(Number(r.amount?.value || 0)),
+      0
+    );
+    const isFullyRefunded =
+      !isRefundFlow && Number.isFinite(amtNum) && refundedSum >= Math.abs(amtNum);
+    const remainingRefundable =
+      !isRefundFlow && Number.isFinite(amtNum)
+        ? Math.max(0, Math.abs(amtNum) - refundedSum)
+        : 0;
+
+    tr.dataset.remaining = remainingRefundable;
+    tr.dataset.currency = tx.currency || "USD";
 
     tr.innerHTML = `
       <td><code>${tx.orderID || "?"}</code></td>
       <td><code>${captureId || "?"}</code></td>
       <td>${tx.error ? "?" : money(tx)}</td>
-      <td>${statusHtml}</td>
       <td>
-        <input class="amt" placeholder="(full)" data-capture="${captureId}" ${isRefundFlow ? "disabled" : ""} />
+        <input class="amt" placeholder="(full)" data-capture="${captureId}" ${
+          isRefundFlow || isFullyRefunded ? "disabled" : ""
+        } />
       </td>
       <td>
-        <button class="ghost" data-action="refund" data-capture="${captureId}" ${isRefundFlow ? "disabled" : ""}>Partial refund</button>
-        <button data-action="full-refund" data-capture="${captureId}" ${isRefundFlow ? "disabled" : ""}>Full refund</button>
+        <button class="ghost" data-action="refund" data-capture="${captureId}" ${
+          isRefundFlow || isFullyRefunded ? "disabled" : ""
+        }>Partial refund</button>
+        <button data-action="full-refund" data-capture="${captureId}" ${
+          isRefundFlow || isFullyRefunded ? "disabled" : ""
+        }>Full refund</button>
       </td>
       <td id="${refundCellId}">
         ${tx.error ? `<span class="pill danger">${tx.error}</span>` : `<span class="pill">No refunds yet</span>`}
@@ -245,11 +255,7 @@ async function loadTransactions() {
     const amtInput = tr.querySelector(`input[data-capture="${captureId}"]`);
     const buttons = tr.querySelectorAll(`button[data-capture="${captureId}"]`);
     const toggleButtons = () => {
-      const val = amtInput ? amtInput.value.trim() : "";
-      const shouldDisable = val === "";
-      buttons.forEach((b) => {
-        if (!isRefundFlow) b.disabled = shouldDisable;
-      });
+      // Keep buttons enabled visually; validation happens on click
     };
     if (amtInput) {
       amtInput.addEventListener("input", toggleButtons);
@@ -273,6 +279,9 @@ async function refundCapture(captureId, amount) {
       return;
     }
     payload.amount = trimmed;
+  } else if (amount === null) {
+    alert("Amount cannot be null.");
+    return;
   }
 
   const res = await fetch(`${SERVER_BASE}/api/admin/refunds`, {
@@ -291,6 +300,8 @@ async function refundCapture(captureId, amount) {
     amount: data.refund?.amount,
     debugId: data.debugId,
   });
+
+  return data; // allow caller to optimistically refresh history
 }
 
 tbody.addEventListener("click", async (e) => {
@@ -300,12 +311,41 @@ tbody.addEventListener("click", async (e) => {
   if (btn.dataset.action === "refund" || btn.dataset.action === "full-refund") {
     const captureId = btn.dataset.capture;
     const input = document.querySelector(`input[data-capture="${captureId}"]`);
-    const amount = btn.dataset.action === "full-refund" ? "" : input ? input.value : "";
+    const amount = btn.dataset.action === "full-refund" ? "" : input ? input.value : null;
+    const row = btn.closest("tr");
+    const remaining = row ? Number(row.dataset.remaining) : null;
 
     btn.disabled = true;
     try {
-      await refundCapture(captureId, amount);
+      if (btn.dataset.action === "refund") {
+        if (!amount || amount.trim() === "") {
+          alert("Enter an amount greater than 0 for a partial refund.");
+          return;
+        }
+        const num = Number(amount.trim());
+        if (!Number.isFinite(num) || num <= 0) {
+          alert("Enter an amount greater than 0 for a partial refund.");
+          return;
+        }
+        // Prevent over-refund client-side: compare against transaction amount
+        if (remaining != null && Number.isFinite(remaining) && num > remaining + 1e-9) {
+          alert(
+            `Amount exceeds remaining refundable balance (${remaining.toFixed(2)}).`
+          );
+          return;
+        }
+      }
+      const refundResp = await refundCapture(captureId, amount);
       await loadTransactions();
+      // Optimistic refresh of refund history to mitigate PayPal reporting lag
+      setTimeout(() => {
+        const cellId = `rh-${captureId.replace(/[^a-zA-Z0-9_-]/g, "")}`;
+        const cellEl = document.getElementById(cellId);
+        if (cellEl) {
+          renderRefundHistoryFromCapture(cellEl, captureId);
+        }
+      }, 400);
+
       alert("Refund done!");
     } catch (err) {
       console.error(err);

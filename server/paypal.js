@@ -206,11 +206,6 @@ export async function refundCapture({ captureId, currency = "USD", amount } = {}
   });
 }
 
-export async function getCapture(captureId) {
-  const token = await getAccessToken();
-  return paypalFetch(`/v2/payments/captures/${captureId}`, { method: "GET", token });
-}
-
 export async function getRefund(refundId) {
   const token = await getAccessToken();
   return paypalFetch(`/v2/payments/refunds/${refundId}`, { method: "GET", token });
@@ -227,7 +222,7 @@ function toReportingISO(date) {
   return d.toISOString().replace(/\.\d{3}Z$/, "Z");
 }
 
-export async function listTransactions({ startDate, endDate, pageSize = 50 } = {}) {
+export async function listTransactions({ startDate, endDate, pageSize = 200 } = {}) {
   const token = await getAccessToken();
   const params = new URLSearchParams();
 
@@ -236,7 +231,8 @@ export async function listTransactions({ startDate, endDate, pageSize = 50 } = {
 
   params.set("start_date", toReportingISO(start));
   params.set("end_date", toReportingISO(end));
-  if (pageSize) params.set("page_size", String(pageSize));
+  const size = Math.max(1, Math.min(Number(pageSize) || 200, 500)); // PayPal max 500
+  params.set("page_size", String(size));
 
   return paypalFetch(`/v1/reporting/transactions?${params.toString()}`, {
     method: "GET",
