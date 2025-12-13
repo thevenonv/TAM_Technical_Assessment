@@ -22,6 +22,23 @@ app.use(express.json());
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+function sendError(res, err) {
+  const status = err.status || 500;
+  if (status >= 500) {
+    console.error("[server] error", {
+      message: err.message,
+      status,
+      debugId: err.debugId,
+      details: err.data,
+    });
+  }
+  res.status(status).json({
+    error: err.message || "Internal error",
+    debugId: err.debugId,
+    details: err.data,
+  });
+}
+
 // Serve client static
 const CLIENT_DIR = path.join(__dirname, "../client");
 app.use(express.static(CLIENT_DIR));

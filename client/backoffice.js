@@ -7,10 +7,23 @@ const filterSellBtn = document.getElementById("filterSell");
 const filterRefundsBtn = document.getElementById("filterRefunds");
 
 let flowFilter = "sell"; // "sell" -> positive amounts, "refund" -> negative amounts
+const localRefunds = {}; // optimistic refunds per captureId
 
 function log(x) {
   logEl.textContent =
     (typeof x === "string" ? x : JSON.stringify(x, null, 2)) + "\n\n" + logEl.textContent;
+}
+
+async function fetchJson(url, options) {
+  const res = await fetch(url, options);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const err = new Error(data.error || `HTTP ${res.status}`);
+    err.status = res.status;
+    err.data = data;
+    throw err;
+  }
+  return data;
 }
 
 function pill(status) {
@@ -152,10 +165,19 @@ function renderRefundHistoryInline(cellEl, refunds) {
 }
 
 async function loadTransactions() {
+  console.log("Loading transactions from", `${SERVER_BASE}/api/admin/transactions?pageSize=1000`);
   tbody.innerHTML = `<tr><td colspan="7">Loading…</td></tr>`;
-  const res = await fetch(`${SERVER_BASE}/api/admin/transactions?pageSize=1000`);
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || "Failed to load transactions");
+  let data;
+  try {
+    const res = await fetch(`${SERVER_BASE}/api/admin/transactions?pageSize=1000`);
+    data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Failed to load transactions");
+  } catch (err) {
+    console.error(err);
+    tbody.innerHTML = `<tr><td colspan="7" style="color:#fca5a5;">${err.message || "Failed to load transactions"}</td></tr>`;
+    alert(err.message || "Failed to load transactions");
+    return;
+  }
 
   const txs = data.transactions || [];
 
@@ -198,7 +220,9 @@ async function loadTransactions() {
     const amtNum = Number(tx.amount);
     const isRefundFlow = Number.isFinite(amtNum) && amtNum < 0;
     const historyId = isRefundFlow ? (tx.orderID || captureId) : captureId;
-    const refundsForCapture = refundMap[captureId] || refundMap[tx.orderID];
+    const refundsFromApi = refundMap[captureId] || refundMap[tx.orderID] || [];
+    const refundsLocal = localRefunds[captureId] || [];
+    const refundsForCapture = [...refundsFromApi, ...refundsLocal];
     const refundedSum = (refundsForCapture || []).reduce(
       (s, r) => s + Math.abs(Number(r.amount?.value || 0)),
       0
@@ -240,7 +264,6 @@ async function loadTransactions() {
     if (!tx.error) {
       const cellEl = document.getElementById(refundCellId);
       if (isRefundFlow) {
-        // In refunds tab, history column not useful -> show dash
         cellEl.textContent = "-";
       } else if (refundsForCapture && refundsForCapture.length) {
         renderRefundHistoryInline(cellEl, refundsForCapture);
@@ -291,7 +314,16 @@ async function refundCapture(captureId, amount) {
   });
 
   const data = await res.json();
-  if (!res.ok) throw new Error(data.error || "Refund failed");
+  if (!res.ok) {
+    // Friendly messages for common PayPal errors
+    const issue =
+      data?.details?.details?.find?.((d) => d.issue) ||
+      (Array.isArray(data?.details) ? data.details.find((d) => d.issue) : null);
+    if (issue?.issue === "CAPTURE_FULLY_REFUNDED") {
+      throw new Error("This capture is already fully refunded (PayPal).");
+    }
+    throw new Error(data.error || issue?.description || "Refund failed");
+  }
 
   log({
     ok: true,
@@ -300,6 +332,17 @@ async function refundCapture(captureId, amount) {
     amount: data.refund?.amount,
     debugId: data.debugId,
   });
+
+  // Optimistic cache of the new refund for immediate UI update
+  const cacheCaptureId = payload.captureId;
+  const existing = localRefunds[cacheCaptureId] || [];
+  const refundEntry = {
+    id: data.refund?.id || data.refundId,
+    status: data.refund?.status,
+    amount: data.refund?.amount || (payload.amount ? { value: payload.amount, currency_code: "USD" } : null),
+    create_time: data.refund?.create_time || new Date().toISOString(),
+  };
+  localRefunds[cacheCaptureId] = [refundEntry, ...existing];
 
   return data; // allow caller to optimistically refresh history
 }
@@ -356,14 +399,19 @@ tbody.addEventListener("click", async (e) => {
   }
 });
 
-refreshBtn.addEventListener("click", async () => {
-  try {
-    await loadTransactions();
-  } catch (e) {
-    console.error(e);
-    alert(e.message);
-  }
-});
+if (refreshBtn) {
+  refreshBtn.addEventListener("click", async () => {
+    console.log("[backoffice] refresh click");
+    try {
+      await loadTransactions();
+    } catch (e) {
+      console.error(e);
+      alert(e.message);
+    }
+  });
+} else {
+  console.warn("[backoffice] refreshBtn not found");
+}
 
 function setFlowFilter(next) {
   flowFilter = next;
@@ -387,10 +435,12 @@ if (filterRefundsBtn) {
 
 // initial load
 (async () => {
+  console.log("[backoffice] initial load");
   try {
     await loadTransactions();
   } catch (e) {
-    console.error(e);
+    console.error("Initial load failed", e);
     alert(e.message);
   }
 })();
+

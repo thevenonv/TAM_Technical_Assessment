@@ -30,11 +30,11 @@ export async function getAccessToken() {
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
     const debugId = res.headers.get("paypal-debug-id");
-    throw new Error(
-      `PayPal token error: ${res.status} ${res.statusText} debug_id=${debugId} details=${JSON.stringify(
-        data
-      )}`
-    );
+    const err = new Error(`PayPal token error: ${res.status} ${res.statusText}`);
+    err.status = res.status;
+    err.debugId = debugId;
+    err.data = data;
+    throw err;
   }
 
   return data.access_token;
