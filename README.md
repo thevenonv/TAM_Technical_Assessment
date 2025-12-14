@@ -1,188 +1,148 @@
 # PayPal Payment Integration – Technical Assessment
 
-**Context:** PayPal Technical Assessment  
-**Environment:** PayPal Sandbox  
+**Context:** PayPal Technical Assessment
+**Environment:** PayPal Sandbox
+
+This project implements a complete PayPal payment flow for a fictitious e-commerce store, *Unleaded*, following the official PayPal JavaScript SDK and REST API guidelines.
+
+The integration is built progressively across three phases, each reflecting a real-world merchant use case: checkout, card payments, and refunds via a back-office system.
 
 ---
 
-## 1. Overview
+## Implemented Features
 
-This project implements a complete PayPal payment integration for a fictitious e-commerce storefront, in accordance with the technical assessment instructions.
+### Phase 1 – PayPal Checkout & Dynamic Shipping
 
-The implementation covers:
-- PayPal checkout with dynamic shipping calculation
-- Unified checkout experience (PayPal + Card payments)
-- Back-office refund management using a **zero local storage** (only APIs) approach
+* PayPal Smart Payment Buttons integration
+* Server-side order creation using the **Orders API (v2)** with `CAPTURE` intent
+* Buyer approval followed by a review page
+* Dynamic shipping calculation based on the buyer’s postal code
+* Order total updated **after approval and before capture** using the `PATCH /orders/{id}` endpoint
+* Immediate capture after buyer confirmation
 
-The solution uses PayPal’s **JavaScript SDK** on the frontend and **PayPal REST APIs v2** on the backend (server), following PayPal best practices and recommended integration patterns.
+### Phase 2 – Unified Checkout (PayPal + Card Payments)
 
----
+* Single checkout flow where buyers first enter their personal and shipping information
+* Two payment options:
 
-## 2. Technology Stack
+  * PayPal (Smart Buttons)
+  * Credit/Debit Card (PayPal Card Fields / Hosted Fields)
+* Shared backend order flow for both payment methods
+* PCI-compliant card handling (card data never reaches the server)
 
-### Frontend
-- HTML, CSS, Vanilla JavaScript
-- PayPal JavaScript SDK
-  - Smart Payment Buttons
-  - Card Fields (Hosted Fields)
+### Phase 3 – Back-Office Refund Management
 
-### Backend
-- Node.js
-- Express.js
-- PayPal REST APIs (Orders, Captures, Refunds)
-- OAuth 2.0 server-side authentication (Client ID & Secret)
-
-### Environment
-- PayPal Sandbox only
-- No real payments or live credentials
+* Dedicated back-office interface for customer support
+* Full and partial refunds supported
+* Refunds executed directly via the **Captures Refund API**
+* **Zero local storage design**: all transaction and refund data is fetched live from PayPal APIs
+* Optional basic authentication for admin routes
 
 ---
 
-## 3. Project Structure
+## Technology Stack
+
+**Frontend**
+
+* HTML, CSS, Vanilla JavaScript
+* PayPal JavaScript SDK (Smart Buttons & Card Fields)
+
+**Backend**
+
+* Node.js & Express
+* PayPal REST APIs (Orders, Captures, Refunds)
+* OAuth 2.0 server-side authentication
+
+**Environment**
+
+* PayPal Sandbox only
+* No live credentials or real payments
+
+---
+
+## Project Structure
 
 ```
-
 client/
-index.html          # Storefront (Phase 1 & Phase 2)
-review.html         # Review & shipping confirmation (Phase 1)
-phase2.js           # Unified checkout logic (Phase 2)
-backoffice.html     # Back-office UI (Phase 3)
-backoffice.js       # Back-office logic
+  index.html        # Storefront (Phase 1 & 2)
+  review.html       # Order review & shipping confirmation
+  phase2.js         # Unified checkout logic
+  backoffice.html   # Refund back-office UI
+  backoffice.js     # Refund logic
 
 server/
-index.js            # Express server (API routes)
-paypal.js           # PayPal API wrapper (OAuth, Orders, Refunds)
+  index.js          # Express server & routes
+  paypal.js         # PayPal API wrapper
 
 .env.example
 README.md
-
-```
----
-
-## 4. Phase 1 – PayPal Checkout Integration
-
-### 4.1 Order Creation
-- Orders are created server-side using:
-```
-
-POST /v2/checkout/orders
-
-```
-- The order intent is set to `CAPTURE`
-- The initial amount includes only the item price (shipping is calculated later)
-
-### 4.2 Buyer Approval
-- PayPal Smart Payment Buttons are rendered using the PayPal JS SDK
-- The buyer approves the payment on PayPal
-
-### 4.3 Review Page and Dynamic Shipping
-After approval:
-1. The buyer is redirected to a review page (`review.html`)
-2. The backend retrieves the buyer’s shipping address from the PayPal Order
-3. Shipping cost is calculated dynamically based on the postal code (NY-based heuristic)
-4. The order amount is updated using:
-```
-
-PATCH /v2/checkout/orders/{order_id}
-
-```
-5. The buyer confirms the updated total
-
-### 4.4 Capture
-- The order is finalized using:
-```
-
-POST /v2/checkout/orders/{order_id}/capture
-
 ```
 
 ---
 
-## 5. Phase 2 – Unified Checkout (PayPal + Card)
+## API Endpoints
 
-### 5.1 Buyer Information Collection
-- The buyer enters personal and shipping information before choosing a payment method
-- Client-side validation ensures required fields are correctly formatted
-- Payment options remain hidden until the buyer information is valid and submitted
+**Storefront**
 
-### 5.2 Payment Methods
-The buyer can choose between:
-- PayPal (Smart Payment Buttons)
-- Credit / Debit Card (PayPal Card Fields)
+* `POST /api/orders` – Create an order
+* `GET /api/orders/:orderID` – Retrieve order & shipping details
+* `PATCH /api/orders/:orderID` – Update shipping and totals
+* `POST /api/orders/:orderID/capture` – Capture payment
 
-Both payment methods rely on the same backend Orders API flow.
+**Back-Office**
 
-### 5.3 Card Payments
-- Card fields are rendered using PayPal Hosted Fields
-- Card data never touches the merchant server (PCI compliant)
-- Orders are created and captured using the same endpoints as PayPal payments
+* `POST /api/admin/refunds` – Full or partial refund
+* `GET /api/admin/captures/:captureId/refunds` – Retrieve refund history
 
 ---
 
-## 6. Phase 3 – Back-Office Refund Management (Zero Storage)
+## Required Identifiers
 
-### 6.1 Design Choice: Zero Storage
-Instead of storing transaction data locally, the back-office retrieves transaction and refund information directly from PayPal APIs.
+### Phase 1 – PayPal Checkout
 
-Benefits:
-- Improved security
-- No duplication of sensitive payment data
-- PayPal remains the single source of truth
+* Order ID: `17A58597EV6721430`
+* Capture ID: `4T4836865P1150937`
+* PayPal Debug ID: `f63838852c156`
 
-### 6.2 Refund Execution
-- Refunds are performed using:
-```
+### Phase 2 – Card Payment
 
-POST /v2/payments/captures/{capture_id}/refund
-
-````
-- Both full and partial refunds are supported
-
-### 6.3 Refund History
-- Refund history is fetched dynamically from PayPal APIs
-- Displayed in the back-office interface
-- No local persistence of refund data
-
-### 6.4 Back-Office Security
-- Optional HTTP Basic Authentication can be enabled for admin routes
-- Credentials are configurable via environment variables
+* Order ID: `7B498598BH332464T`
+* Capture ID: `01X5014339764721V`
+* PayPal Debug ID: `f629127f2e463`
 
 ---
 
-## 7. API Endpoints
+## Phase 3 – Refund Management (Back-Office)
 
-### Storefront
-- `POST /api/orders`  
-Create an order
-- `GET /api/orders/:orderID`  
-Retrieve an order and shipping address
-- `PATCH /api/orders/:orderID`  
-Update shipping and totals before capture
-- `POST /api/orders/:orderID/capture`  
-Capture the order
+### 🔹 Partial Refund (Sandbox)
 
-### Back-Office
-- `POST /api/admin/refunds`  
-Refund a capture (full or partial)
-- `GET /api/admin/captures/:captureId/refunds`  
-Retrieve refund history directly from PayPal
+| Identifier          | Value               |
+| ------------------- | ------------------- |
+| **Order ID**        | `97041993PG632723D` |
+| **Capture ID**      | `5F395483SD1827037` |
+| **Refund ID**       | `5UH85635EH747143Y` |
+| **PayPal Debug ID** | `f84318013aea2`     |
+| **Refund Amount**   | `15.99 USD`         |
 
 ---
 
-## 8. Configuration
+### 🔹 Full Refund (Sandbox)
 
-### Environment Variables
-
-Using a `.env` file. We can look at the `.env.example` file
-
-Frontend:
-
-* The PayPal JS SDK is loaded in `index.html` using the sandbox `client-id`
-* You need to replace the client-id with your own sandbox credentials
+| Identifier          | Value               |
+| ------------------- | ------------------- |
+| **Order ID**        | `7E847069F23470119` |
+| **Capture ID**      | `3T401736LP9120341` |
+| **Refund ID**       | `2270745716703322D` |
+| **PayPal Debug ID** | `f2196689e915b`     |
+| **Refund Amount**   | `FULL`              |
 
 ---
 
-## 9. Installation and Run
+## Configuration & Run
+
+1. Create a `.env` file based on `.env.example`
+2. Add your PayPal **Sandbox Client ID & Secret**
+3. Install and start the project:
 
 ```bash
 npm install
@@ -191,27 +151,28 @@ npm start
 
 Access:
 
-* Storefront: [http://localhost:3001/index.html](http://localhost:3001/index.html)
-* Review page: [http://localhost:3001/review.html](http://localhost:3001/review.html)
-* Back-office: [http://localhost:3001/backoffice.html](http://localhost:3001/backoffice.html)
+* Storefront: `http://localhost:3001/index.html`
+* Review page: `http://localhost:3001/review.html`
+* Back-office: `http://localhost:3001/backoffice.html`
 
 ---
 
-## 10. Debugging and Error Handling
+## Debugging & Error Handling
 
-* All PayPal API responses include a `PayPal-Debug-Id`
-* Backend errors return structured information (`error`, `debugId`, `details`)
-* Frontend displays clear error messages
-* Back-office logs refund responses and API errors for troubleshooting
+* All PayPal API responses expose a `PayPal-Debug-Id`
+* Backend errors return structured details for troubleshooting
+* Frontend and back-office display clear error messages
 
 ---
 
-## 11. Conclusion
+## Summary
 
 This project demonstrates:
 
-* Correct implementation of PayPal JavaScript SDK and Orders API
-* Dynamic shipping updates using PATCH before capture
-* Unified checkout with PayPal and Card Fields
-* Secure refund handling without local transaction storage
-* Clear separation between storefront, backend, and back-office logic
+* Correct use of the PayPal JavaScript SDK and Orders API
+* Dynamic order updates before capture
+* A unified PayPal + card checkout experience
+* Secure, API-driven refund management
+* Clean separation between frontend, backend, and back-office logic
+
+---
