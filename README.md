@@ -98,17 +98,23 @@ README.md
 
 ## Required Identifiers
 
-### Phase 1 – PayPal Checkout
+## Phase 1 – PayPal Checkout (Sandbox)
 
-* Order ID: `17A58597EV6721430`
-* Capture ID: `4T4836865P1150937`
-* PayPal Debug ID: `f63838852c156`
+| Identifier          | Value               |
+| ------------------- | ------------------- |
+| **Order ID**        | `17A58597EV6721430` |
+| **Capture ID**      | `4T4836865P1150937` |
+| **PayPal Debug ID** | `f63838852c156`     |
 
-### Phase 2 – Card Payment
+---
 
-* Order ID: `7B498598BH332464T`
-* Capture ID: `01X5014339764721V`
-* PayPal Debug ID: `f629127f2e463`
+## Phase 2 – Card Payment (Sandbox)
+
+| Identifier          | Value               |
+| ------------------- | ------------------- |
+| **Order ID**        | `7B498598BH332464T` |
+| **Capture ID**      | `01X5014339764721V` |
+| **PayPal Debug ID** | `f629127f2e463`     |
 
 ---
 
