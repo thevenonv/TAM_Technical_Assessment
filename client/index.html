@@ -1,4 +1,4 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
@@ -13,15 +13,15 @@
         <div>
           <div class="brand">
             <img src="https://www.paypalobjects.com/webstatic/icon/pp258.png" alt="PayPal" />
-            <div class="badge">🧪 Sandbox · Phase 2 Unified Checkout</div>
+            <div class="badge">Phase 2: Unified Checkout</div>
           </div>
           <h1 style="margin-top:10px;">Select a product, enter buyer info, pay</h1>
           <p>Phase 2: the buyer fills their info <b>before</b> choosing <b>PayPal</b> or <b>Card</b>.</p>
         </div>
             <div class="pill" style="display:flex; gap:10px;">
-                <span>💳 PayPal JS SDK • Buttons + Card Fields</span>
+                <span>PayPal JS SDK Buttons + Card Fields</span>
                 <a href="/backoffice.html" style="text-decoration:none;">
-                    <button class="btn secondary" type="button" style="margin:0;">Back-office →</button>
+                    <button class="btn secondary" type="button" style="margin:0;">Back-office</button>
                 </a>
             </div>
         </div>
@@ -31,7 +31,7 @@
         <div class="card">
           <div class="card-header">
             <h2 class="card-title">Products</h2>
-            <p class="card-subtitle">Scroll → click a product to select it.</p>
+            <p class="card-subtitle">Scroll and click a product to select it.</p>
           </div>
           <div class="card-body">
             <div id="carousel" class="carousel"></div>
@@ -48,7 +48,7 @@
           <div class="card-body">
             <div class="summaryRow">
               <div class="label">Selected item</div>
-              <div class="value" id="selectedName">—</div>
+              <div class="value" id="selectedName">-</div>
             </div>
 
             <div class="summaryRow">
@@ -117,7 +117,6 @@
                   </select>
                 </div>
               </div>
-              <div id="formErrors" style="display:none; margin-top:10px; color:#ffb4b4;"></div>
               <button class="btn" type="submit" id="continueBtn">Continue to payment</button>
               <div id="buyerStatus" class="notice hidden"></div>
             </form>
@@ -128,7 +127,7 @@
         <div class="card hidden" id="paymentSection">
           <div class="card-header">
             <h2 class="card-title">Choose payment method</h2>
-            <p class="card-subtitle">PayPal Buttons or Card Fields — same Orders API backend.</p>
+            <p class="card-subtitle">PayPal Buttons or Card Fields - same Orders API backend.</p>
           </div>
           <div class="card-body">
             <div class="tabs">
@@ -138,7 +137,7 @@
 
             <div id="panelPayPal" class="box">
               <div class="notice">
-                You’ll approve on PayPal, then we redirect you to <b>review.html</b> for shipping update + capture.
+                You will approve on PayPal, then we redirect you to <b>review.html</b> for shipping update + capture.
               </div>
               <div style="margin-top:12px;" id="paypal-button-container"></div>
               <div id="paypalStatus" class="notice hidden"></div>
@@ -146,7 +145,7 @@
 
             <div id="panelCard" class="box hidden">
               <div class="notice">
-                Enter card details. Clicking “Pay with card” will submit via PayPal Card Fields.
+                Enter card details. Clicking Pay with card will submit via PayPal Card Fields.
               </div>
 
               <div id="cardEligibility" class="notice warn hidden"></div>
@@ -233,116 +232,6 @@
     <script src="https://www.paypal.com/sdk/js?client-id=ASbueoig2hEMWPriVDVgiBGKhULs18A7JSiH-C3rCz7otPKDA1wIBWM-q91MBhyei0a3hsORON91VV6q&currency=USD&intent=capture&components=buttons,card-fields"></script>
 
     <!-- Phase 2 logic -->
-    <script src="phase2.js"></script>
-
-    <script>
-        const els = {
-        fullName: document.getElementById("fullName"),
-        email: document.getElementById("email"),
-        line1: document.getElementById("addr1"),
-        line2: document.getElementById("addr2"),
-        city: document.getElementById("city"),
-        state: document.getElementById("state"),
-        postal: document.getElementById("zip"),
-        country: document.getElementById("country"),
-        btn: document.getElementById("continueBtn"),
-        errors: document.getElementById("formErrors"),
-        };
-        
-        let hasSubmitted = false;
-        const isUS = () => (els.country?.value || "US") === "US";
-
-        function normalize() {
-            if (els.state) els.state.value = els.state.value.toUpperCase().replace(/[^A-Z]/g, "").slice(0, 2);
-            if (els.postal) els.postal.value = els.postal.value.replace(/[^0-9-]/g, "").slice(0, 10);
-            if (els.city) els.city.value = els.city.value.replace(/[0-9]/g, "");
-        }
-
-        function validate() {
-            const errs = [];
-
-            if (!els.fullName.value.trim()) errs.push("Full name is required.");
-            if (!els.line1.value.trim()) errs.push("Address line 1 is required.");
-            if (!els.city.value.trim()) errs.push("City is required.");
-
-            if (els.email.value.trim()) {
-                if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(els.email.value.trim())) {
-                errs.push("Email format is invalid.");
-                }
-            }
-
-            if (isUS()) {
-                if (!/^[A-Z]{2}$/.test(els.state.value)) {
-                errs.push("State must be 2 letters (ex: NY).");
-                }
-                if (!/^\d{5}(-\d{4})?$/.test(els.postal.value)) {
-                errs.push("Postal code must be 5 digits.");
-                }
-            }
-
-            const ok = errs.length === 0;
-
-            if (hasSubmitted) {
-                els.errors.style.display = ok ? "none" : "block";
-                els.errors.innerHTML = ok ? "" : "⚠️ " + errs.join("<br>• ");
-            } else {
-                els.errors.style.display = "none";
-                els.errors.innerHTML = "";
-            }
-
-            els.btn.disabled = false;
-            return ok;
-            }
-
-        ["input", "change", "blur"].forEach(evt => {
-        Object.values(els).forEach(el => {
-            if (el && el.tagName && el !== els.btn && el !== els.errors) {
-            el.addEventListener(evt, () => {
-                normalize();
-                validate();
-            });
-            }
-        });
-        });
-
-        document.getElementById("buyerForm").addEventListener("submit", (e) => {
-        hasSubmitted = true;
-        normalize();
-
-        if (!validate()) {
-            e.preventDefault();
-            e.stopPropagation();
-        }
-        });
-
-        normalize();
-        validate();
-
-        const buyerForm = document.getElementById("buyerForm");
-        const paymentSection = document.getElementById("paymentSection");
-
-        buyerForm.addEventListener("submit", (e) => {
-        e.preventDefault();
-        hasSubmitted = true;
-
-        normalize();
-        const ok = validate();
-
-        if (!ok) {
-            paymentSection.classList.add("hidden");
-            return;
-        }
-
-        paymentSection.classList.remove("hidden");
-
-        document.getElementById("buyerStatus").className = "notice success";
-        document.getElementById("buyerStatus").textContent =
-            "✔ Buyer information validated. Choose your payment method.";
-        document.getElementById("buyerStatus").classList.remove("hidden");
-        });
-
-    </script>
-
+    <script src="app.js"></script>
   </body>
 </html>
-

@@ -58,7 +58,6 @@ app.get("/health", (req, res) => {
 
 app.get(
   "/api/admin/refunds/:refundId",
-  basicAuthAdmin,
   asyncHandler(async (req, res) => {
     const { refundId } = req.params;
     const { data, debugId } = await getRefund(refundId).catch((err) => {
@@ -74,7 +73,6 @@ app.get(
 
 app.get(
   "/api/admin/captures/:captureId",
-  basicAuthAdmin,
   asyncHandler(async (req, res) => {
     const { captureId } = req.params;
     const { data, debugId } = await getCaptureDetails(captureId);
@@ -97,7 +95,6 @@ app.get(
 
 app.get(
   "/api/admin/captures/:captureId/refunds",
-  basicAuthAdmin,
   asyncHandler(async (req, res) => {
     const { captureId } = req.params;
 
@@ -157,31 +154,6 @@ app.get(
     });
   }),
 );
-
-function basicAuthAdmin(req, res, next) {
-  const user = process.env.ADMIN_USER;
-  const pass = process.env.ADMIN_PASS;
-
-  if (!user || !pass) return next();
-
-  const header = req.headers.authorization || "";
-  const [type, creds] = header.split(" ");
-
-  if (type !== "Basic" || !creds) {
-    res.setHeader("WWW-Authenticate", 'Basic realm="Backoffice"');
-    return res.status(401).json({ error: "Missing Basic auth" });
-  }
-
-  const decoded = Buffer.from(creds, "base64").toString("utf-8");
-  const [u, p] = decoded.split(":");
-
-  if (u !== user || p !== pass) {
-    res.setHeader("WWW-Authenticate", 'Basic realm="Backoffice"');
-    return res.status(401).json({ error: "Invalid credentials" });
-  }
-
-  next();
-}
 
 function normalizeAmount(amount) {
   if (amount === undefined || amount === "") return null;
@@ -282,7 +254,6 @@ app.post(
 
 app.get(
   "/api/admin/transactions",
-  basicAuthAdmin,
   asyncHandler(async (req, res) => {
     const { start, end, pageSize } = req.query || {};
 
@@ -325,7 +296,6 @@ app.get(
 
 app.post(
   "/api/admin/refunds",
-  basicAuthAdmin,
   asyncHandler(async (req, res) => {
     const { captureId, amount } = req.body || {};
     if (!captureId) {

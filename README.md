@@ -1,3 +1,4 @@
+````md
 # PayPal Payment Integration – Technical Assessment
 ---
 
@@ -5,10 +6,10 @@
 
 This project demonstrates a complete PayPal payment flow including:
 
-* PayPal Checkout and card payments using a unified backend
-* Dynamic order updates (shipping & totals) before capture
-* Secure server-side payment capture
-* Back-office refund management (full & partial)
+- PayPal Checkout and card payments using a unified backend
+- Dynamic order updates (shipping & totals) before capture
+- Secure server-side payment capture
+- Back-office refund management (full & partial)
 
 The integration strictly follows PayPal best practices and uses **no local persistence**, relying exclusively on PayPal APIs as the source of truth.
 
@@ -27,10 +28,10 @@ The integration strictly follows PayPal best practices and uses **no local persi
 
 **Key PayPal APIs used**
 
-* `POST /v2/checkout/orders`
-* `GET /v2/checkout/orders/{id}`
-* `PATCH /v2/checkout/orders/{id}`
-* `POST /v2/checkout/orders/{id}/capture`
+- `POST /v2/checkout/orders`
+- `GET /v2/checkout/orders/{id}`
+- `PATCH /v2/checkout/orders/{id}`
+- `POST /v2/checkout/orders/{id}/capture`
 
 ---
 
@@ -43,8 +44,8 @@ The integration strictly follows PayPal best practices and uses **no local persi
 
 **Key PayPal APIs used**
 
-* `POST /v2/payments/captures/{id}/refund`
-* `GET /v2/payments/captures/{id}/refunds`
+- `POST /v2/payments/captures/{id}/refund`
+- `GET /v2/payments/captures/{id}/refunds`
 
 ---
 
@@ -59,7 +60,7 @@ The integration strictly follows PayPal best practices and uses **no local persi
 ```env
 PAYPAL_CLIENT_ID=your_sandbox_client_id
 PAYPAL_SECRET=your_sandbox_client_secret
-```
+````
 
 ### Run the Application
 
@@ -83,7 +84,7 @@ npm start
 A single backend order lifecycle is shared between:
 
 * PayPal Smart Buttons
-* Card Payments (PayPal Hosted/Card Fields)
+* Card Payments (PayPal Hosted / Card Fields)
 
 This avoids duplicated logic and ensures consistent behavior across payment methods.
 
@@ -125,6 +126,11 @@ client/
 server/
   index.js          # Express server & routes
   paypal.js         # PayPal API wrapper
+
+videos/
+  Video_Phase1.mp4  # PayPal Checkout & dynamic shipping demo
+  Video_Phase2.mp4  # Unified checkout (PayPal + Card) demo
+  Video_Phase3.mp4  # Back-office refund management demo
 
 .env.example
 README.md
