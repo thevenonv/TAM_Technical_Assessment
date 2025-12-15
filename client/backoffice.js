@@ -384,9 +384,14 @@ tbody.addEventListener("click", async (e) => {
   if (btn.dataset.action === "refund" || btn.dataset.action === "full-refund") {
     const captureId = btn.dataset.capture;
     const input = document.querySelector(`input[data-capture="${captureId}"]`);
-    const amount = btn.dataset.action === "full-refund" ? "" : input ? input.value : null;
     const row = btn.closest("tr");
     const remaining = row ? Number(row.dataset.remaining) : null;
+    const amount =
+      btn.dataset.action === "full-refund"
+        ? Number.isFinite(remaining) ? remaining.toFixed(2) : ""
+        : input
+        ? input.value
+        : null;
 
     btn.disabled = true;
     try {

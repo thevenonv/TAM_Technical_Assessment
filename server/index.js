@@ -15,6 +15,7 @@ import {
   refundCapture,
   listTransactions,
 } from "./paypal.js";
+import { recordOrder, recordCapture, recordRefund, listEntries } from "./store.js";
 
 const app = express();
 app.use(cors());
@@ -179,6 +180,12 @@ app.post(
     const { currency = "USD", amount = "10.00", sku, name, buyerInfo } = req.body || {};
 
     const { data, debugId } = await createOrder({ currency, amount, buyerInfo });
+    recordOrder({
+      orderID: data.id,
+      amount,
+      currency,
+      product: { sku, name },
+    }).catch((e) => console.warn("[store] recordOrder failed", e));
 
     res.status(201).json({
       orderID: data.id,
@@ -241,6 +248,15 @@ app.post(
 
     const pu = data.purchase_units?.[0];
     const capture = pu?.payments?.captures?.[0];
+    if (capture?.id) {
+      recordCapture({
+        orderID,
+        captureId: capture.id,
+        captureStatus: capture.status,
+        captureAmount: capture.amount?.value,
+        currency: capture.amount?.currency_code,
+      }).catch((e) => console.warn("[store] recordCapture failed", e));
+    }
 
     res.json({
       ok: true,
@@ -311,6 +327,13 @@ app.post(
       captureId,
       amount: parsedAmount ? parsedAmount.value : undefined,
     });
+    recordRefund({
+      captureId,
+      refundId: data.id,
+      amount: data.amount?.value ?? parsedAmount?.value ?? null,
+      currency: data.amount?.currency_code ?? "USD",
+      status: data.status,
+    }).catch((e) => console.warn("[store] recordRefund failed", e));
 
     res.json({
       ok: true,
@@ -318,6 +341,14 @@ app.post(
       refundId: data.id,
       refund: data,
     });
+  }),
+);
+
+app.get(
+  "/api/local/transactions",
+  asyncHandler(async (_req, res) => {
+    const entries = await listEntries();
+    res.json({ ok: true, entries });
   }),
 );
 

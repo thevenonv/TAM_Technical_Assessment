@@ -1,0 +1,123 @@
+[
+  {
+    "orderID": "0MX351275T196332X",
+    "amount": 19.9,
+    "currency": "USD",
+    "product": {
+      "sku": "cap",
+      "name": "Everyday Cap"
+    },
+    "createdAt": "2025-12-15T14:54:08.193Z",
+    "updatedAt": "2025-12-15T14:55:02.701Z",
+    "captureId": "1CV215694B7975546",
+    "captureStatus": "COMPLETED",
+    "captureAmount": 31.89,
+    "capturedAt": "2025-12-15T14:54:29.855Z",
+    "refunds": [
+      {
+        "refundId": "56M90860K06639944",
+        "amount": 31.89,
+        "currency": "USD",
+        "status": "COMPLETED",
+        "createdAt": "2025-12-15T14:55:02.701Z"
+      }
+    ]
+  },
+  {
+    "orderID": "8T843907ND610874A",
+    "amount": 49.5,
+    "currency": "USD",
+    "product": {
+      "sku": "sneakers",
+      "name": "Running Sneakers"
+    },
+    "createdAt": "2025-12-15T15:05:01.123Z",
+    "updatedAt": "2025-12-15T15:11:59.539Z",
+    "captureId": "9MF47526JL388280X",
+    "captureStatus": "COMPLETED",
+    "captureAmount": 61.49,
+    "capturedAt": "2025-12-15T15:05:12.251Z",
+    "refunds": [
+      {
+        "refundId": "6NL56745EX6160928",
+        "amount": 51.49,
+        "currency": "USD",
+        "status": "COMPLETED",
+        "createdAt": "2025-12-15T15:11:59.539Z"
+      },
+      {
+        "refundId": "4JC07872W6431733V",
+        "amount": 10,
+        "currency": "USD",
+        "status": "COMPLETED",
+        "createdAt": "2025-12-15T15:05:55.898Z"
+      }
+    ]
+  },
+  {
+    "orderID": "86G0152853073760G",
+    "amount": 49.5,
+    "currency": "USD",
+    "product": {
+      "sku": "sneakers",
+      "name": "Running Sneakers"
+    },
+    "createdAt": "2025-12-15T15:44:19.234Z",
+    "updatedAt": "2025-12-15T17:11:50.948Z",
+    "captureId": "1SU34715JU680424G",
+    "captureStatus": "COMPLETED",
+    "captureAmount": 61.49,
+    "capturedAt": "2025-12-15T15:44:32.510Z",
+    "refunds": [
+      {
+        "refundId": "68385392SX6700743",
+        "amount": 6,
+        "currency": "USD",
+        "status": "COMPLETED",
+        "createdAt": "2025-12-15T17:11:50.948Z"
+      },
+      {
+        "refundId": "1JY928016T468044X",
+        "amount": 5,
+        "currency": "USD",
+        "status": "COMPLETED",
+        "createdAt": "2025-12-15T15:55:08.787Z"
+      },
+      {
+        "refundId": "7T2289272L875570J",
+        "amount": 10,
+        "currency": "USD",
+        "status": "COMPLETED",
+        "createdAt": "2025-12-15T15:50:01.907Z"
+      },
+      {
+        "refundId": "10P3328143353222A",
+        "amount": 11.49,
+        "currency": "USD",
+        "status": "COMPLETED",
+        "createdAt": "2025-12-15T15:45:02.033Z"
+      }
+    ]
+  },
+  {
+    "captureId": "4T4836865P1150937",
+    "refunds": [
+      {
+        "refundId": "85U75670KH6294927",
+        "amount": 6,
+        "currency": "USD",
+        "status": "COMPLETED",
+        "createdAt": "2025-12-15T15:58:58.726Z"
+      },
+      {
+        "refundId": "27R61547UG358770S",
+        "amount": 5.89,
+        "currency": "USD",
+        "status": "COMPLETED",
+        "createdAt": "2025-12-15T15:47:14.497Z"
+      }
+    ],
+    "createdAt": "2025-12-15T15:47:14.497Z",
+    "updatedAt": "2025-12-15T15:58:58.726Z"
+  }
+]

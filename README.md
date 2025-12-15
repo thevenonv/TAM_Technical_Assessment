@@ -1,4 +1,4 @@
-# PayPal Payment Integration – Technical Assessment
+-# PayPal Payment Integration --- Technical Assessment
 ---
 
 ## 1. Overview
@@ -9,6 +9,7 @@ This project demonstrates a complete PayPal payment flow including:
 - Dynamic order updates (shipping & totals) before capture
 - Secure server-side payment capture
 - Back-office refund management (full & partial)
+- Optional local cache for faster backoffice reads (PayPal stays source of truth)
 
 The integration strictly follows PayPal best practices and uses **no local persistence**, relying exclusively on PayPal APIs as the source of truth.
 
@@ -40,6 +41,7 @@ The integration strictly follows PayPal best practices and uses **no local persi
 | ---------------------------------------- | ------ | --------------------------------------------- |
 | `/api/admin/refunds`                     | POST   | Executes full or partial refunds on a capture |
 | `/api/admin/captures/:captureId/refunds` | GET    | Retrieves refund history for a given capture  |
+| `/api/local/transactions`                | GET    | Reads locally cached orders/captures/refunds (best-effort) |
 
 **Key PayPal APIs used**
 
@@ -72,7 +74,8 @@ npm start
 
 * Storefront: `http://localhost:3001/index.html`
 * Review page: `http://localhost:3001/review.html`
-* Back-office: `http://localhost:3001/backoffice.html`
+* Back-office (live PayPal reporting): `http://localhost:3001/backoffice.html`
+* Back-office Live (local cache + PayPal check): `http://localhost:3001/backofficeLive.html`
 
 ---
 
@@ -92,15 +95,15 @@ This avoids duplicated logic and ensures consistent behavior across payment meth
 ### Dynamic Shipping Update After Approval
 
 Shipping costs are calculated **after buyer approval**, using the postal code provided by PayPal.
-The order is updated via `PATCH /orders/{id}` **before capture**, aligning with PayPal’s recommended flow for dynamic pricing.
+The order is updated via `PATCH /orders/{id}` **before capture**, aligning with PayPal---s recommended flow for dynamic pricing.
 
 ---
 
-### Zero Local Storage Architecture
+### Local Cache for Faster Backoffice
 
-* No database is used
-* Orders, captures, and refunds are always fetched directly from PayPal APIs
-* Ensures data consistency and simplifies compliance considerations
+* No database is used; a small JSON file (`server/data/local-transactions.json`) is written for the backoffice live view.
+* Orders/captures/refunds are recorded opportunistically to reduce PayPal reporting latency; PayPal remains the source of truth.
+* The live view (`backofficeLive.html`) displays cached data and can cross-check each capture against PayPal.
 
 ---
 
@@ -117,14 +120,18 @@ The order is updated via `PATCH /orders/{id}` **before capture**, aligning with 
 ```
 client/
   index.html        # Storefront (Phase 1 & 2)
+  app.js            # Unified checkout logic (PayPal + Card)
   review.html       # Order review & shipping confirmation
-  phase2.js         # Unified checkout logic
-  backoffice.html   # Refund back-office UI (Phase 3)
-  backoffice.js     # Refund logic (Phase 3)
+  review.js         # Review page logic
+  backoffice.html   # Refund back-office UI (direct PayPal reporting)
+  backoffice.js     # Refund logic (PayPal reporting)
+  backofficeLive.html # Cached back-office UI (local JSON + PayPal check)
+  backofficeLive.js # Cached back-office logic
 
 server/
   index.js          # Express server & routes
   paypal.js         # PayPal API wrapper
+  store.js          # Local JSON cache for orders/captures/refunds
 
 videos/
   Video_Phase1.mp4  # PayPal Checkout & dynamic shipping demo
@@ -139,7 +146,7 @@ README.md
 
 ## 6. Sandbox Reference Transactions
 
-### Phase 1 – PayPal Checkout
+### Phase 1 --- PayPal Checkout
 
 | Identifier      | Value             |
 | --------------- | ----------------- |
@@ -149,7 +156,7 @@ README.md
 
 ---
 
-### Phase 2 – Card Payment
+### Phase 2 --- Card Payment
 
 | Identifier      | Value             |
 | --------------- | ----------------- |
@@ -159,7 +166,7 @@ README.md
 
 ---
 
-### Phase 3 – Refund Management
+### Phase 3 --- Refund Management
 
 **Partial Refund**
 
@@ -185,7 +192,7 @@ README.md
 
 * Every PayPal API response exposes a `PayPal-Debug-Id`
 * Errors are returned in a structured JSON format
-* Debug IDs can be used directly in PayPal’s internal troubleshooting tools
+* Debug IDs can be used directly in PayPal---s internal troubleshooting tools
 
 ---
 
