@@ -1,12 +1,13 @@
-import express from "express";
+﻿import express from "express";
 import cors from "cors";
 import "dotenv/config";
 
 import path from "path";
 import { fileURLToPath } from "url";
-import { getCaptureDetails, getRefund } from "./paypal.js"; // getRefund si tu l'as déjà
-
 import {
+  getAccessToken,
+  getCaptureDetails,
+  getRefund,
   createOrder,
   getOrder,
   updateOrderShipping,
@@ -24,6 +25,12 @@ const __dirname = path.dirname(__filename);
 
 function sendError(res, err) {
   const status = err.status || 500;
+  const payload = {
+    error: err.message || "Internal error",
+    debugId: err.debugId,
+    details: err.data,
+  };
+  if (err.hint) payload.hint = err.hint;
   if (status >= 500) {
     console.error("[server] error", {
       message: err.message,
@@ -32,73 +39,87 @@ function sendError(res, err) {
       details: err.data,
     });
   }
-  res.status(status).json({
-    error: err.message || "Internal error",
-    debugId: err.debugId,
-    details: err.data,
-  });
+  res.status(status).json(payload);
 }
 
-// Serve client static
+const asyncHandler = (fn) => (req, res, next) =>
+  Promise.resolve(fn(req, res, next)).catch((err) => sendError(res, err));
+
 const CLIENT_DIR = path.join(__dirname, "../client");
 app.use(express.static(CLIENT_DIR));
 
-/**
- * ✅ Fix "Cannot GET /"
- * Force / to serve client/index.html
- */
 app.get("/", (req, res) => {
   res.sendFile(path.join(CLIENT_DIR, "index.html"));
 });
 
-/**
- * Health check
- */
 app.get("/health", (req, res) => {
   res.json({ ok: true });
 });
 
-app.get("/api/admin/refunds/:refundId", basicAuthAdmin, async (req, res) => {
-  try {
+app.get(
+  "/api/admin/refunds/:refundId",
+  basicAuthAdmin,
+  asyncHandler(async (req, res) => {
     const { refundId } = req.params;
-    const { data, debugId } = await getRefund(refundId);
+    const { data, debugId } = await getRefund(refundId).catch((err) => {
+      if ((err.status || 0) === 403) {
+        err.hint =
+          "Transaction Search is not enabled for these PayPal sandbox credentials. Enable the Reporting/Transaction Search permission in the PayPal Developer app, then try again.";
+      }
+      throw err;
+    });
     res.json({ ok: true, debugId, refund: data });
-  } catch (e) {
-    const status = e.status || 500;
-    const body = {
-      error: e.message,
-      debugId: e.debugId,
-      details: e.data,
+  }),
+);
+
+app.get(
+  "/api/admin/captures/:captureId",
+  basicAuthAdmin,
+  asyncHandler(async (req, res) => {
+    const { captureId } = req.params;
+    const { data, debugId } = await getCaptureDetails(captureId);
+
+    const capture = {
+      captureId: data?.id || captureId,
+      status: data?.status || null,
+      amount: data?.amount?.value || null,
+      currency: data?.amount?.currency_code || null,
+      createTime: data?.create_time || data?.update_time || null,
+      orderID: data?.supplementary_data?.related_ids?.order_id || null,
+      payerEmail: data?.payer_email || null,
+      debugId,
+      raw: data,
     };
 
-    // PayPal returns 403/NOT_AUTHORIZED when the Transaction Search (reporting)
-    // permission is not enabled on the app. Surface a clearer hint to the UI.
-    if (status === 403) {
-      body.hint =
-        "Transaction Search n'est pas activé pour ces credentials PayPal (sandbox). Active la permission Reporting/Transaction Search dans l'app PayPal Developer, puis réessaie.";
-    }
+    res.json({ ok: true, debugId, capture });
+  }),
+);
 
-    res.status(status).json(body);
-  }
-});
-
-app.get("/api/admin/captures/:captureId/refunds", basicAuthAdmin, async (req, res) => {
-  try {
+app.get(
+  "/api/admin/captures/:captureId/refunds",
+  basicAuthAdmin,
+  asyncHandler(async (req, res) => {
     const { captureId } = req.params;
 
-    // 1) Fetch capture details
     const { data: cap, debugId } = await getCaptureDetails(captureId);
+    const captureStatus = cap?.status || null;
+    const captureAmount = cap?.amount?.value || null;
+    const captureCurrency = cap?.amount?.currency_code || null;
 
-    // 2) Try to find refund link
-    const refundLink = (cap.links || []).find(l => l.rel === "refund")?.href;
+    const refundLink = (cap.links || []).find((l) => l.rel === "refund")?.href;
 
-    // If PayPal doesn't provide it in sandbox responses, return empty
     if (!refundLink) {
-      return res.json({ ok: true, debugId, refunds: [] });
+      return res.json({
+        ok: true,
+        debugId,
+        refunds: [],
+        captureStatus,
+        captureAmount,
+        captureCurrency,
+      });
     }
 
-    // 3) Call the refund link (PayPal gives full URL)
-    const token = await (await import("./paypal.js")).getAccessToken(); // or reuse your function differently
+    const token = await getAccessToken();
     const r = await fetch(refundLink, {
       method: "GET",
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
@@ -108,9 +129,15 @@ app.get("/api/admin/captures/:captureId/refunds", basicAuthAdmin, async (req, re
     const refundsDebugId = r.headers.get("paypal-debug-id");
 
     if (!r.ok) {
-      // PayPal can return 404/400 when no refunds exist. Surface empty list instead of breaking the UI.
       if (r.status === 404 || r.status === 400 || r.status === 422) {
-        return res.json({ ok: true, debugId: refundsDebugId || debugId, refunds: [] });
+        return res.json({
+          ok: true,
+          debugId: refundsDebugId || debugId,
+          refunds: [],
+          captureStatus,
+          captureAmount,
+          captureCurrency,
+        });
       }
 
       return res.status(r.status).json({
@@ -120,28 +147,21 @@ app.get("/api/admin/captures/:captureId/refunds", basicAuthAdmin, async (req, re
       });
     }
 
-    // refundsData may be list-like depending on PayPal
-    res.json({ ok: true, debugId: refundsDebugId || debugId, refunds: refundsData });
-  } catch (e) {
-    res.status(e.status || 500).json({
-      error: e.message,
-      debugId: e.debugId,
-      details: e.data,
+    res.json({
+      ok: true,
+      debugId: refundsDebugId || debugId,
+      refunds: refundsData,
+      captureStatus,
+      captureAmount,
+      captureCurrency,
     });
-  }
-});
+  }),
+);
 
-/**
- * ---------- OPTIONAL: Basic Auth for backoffice ----------
- * Put in .env:
- * ADMIN_USER=admin
- * ADMIN_PASS=admin123
- */
 function basicAuthAdmin(req, res, next) {
   const user = process.env.ADMIN_USER;
   const pass = process.env.ADMIN_PASS;
 
-  // If not configured, do not block
   if (!user || !pass) return next();
 
   const header = req.headers.authorization || "";
@@ -163,15 +183,12 @@ function basicAuthAdmin(req, res, next) {
   next();
 }
 
-/**
- * Helper: validate money string (2 decimals max)
- */
 function normalizeAmount(amount) {
-  if (amount === undefined || amount === "") return null; // full refund (no amount provided)
-  if (amount === null) return { error: "Amount cannot be null. Leave empty for full refund or provide a value > 0." };
+  if (amount === undefined || amount === "") return null;
+  if (amount === null)
+    return { error: "Amount cannot be null. Leave empty for full refund or provide a value > 0." };
   const s = String(amount).trim();
 
-  // allow "5", "5.0", "5.00" but not "5.000" or "abc"
   if (!/^\d+(\.\d{1,2})?$/.test(s)) {
     return { error: "Invalid amount format. Use e.g. 5.00" };
   }
@@ -184,18 +201,10 @@ function normalizeAmount(amount) {
   return { value: n.toFixed(2) };
 }
 
-/**
- * 1) Create order
- */
-app.post("/api/orders", async (req, res) => {
-  try {
-    const {
-      currency = "USD",
-      amount = "10.00",
-      sku,
-      name,
-      buyerInfo,
-    } = req.body || {};
+app.post(
+  "/api/orders",
+  asyncHandler(async (req, res) => {
+    const { currency = "USD", amount = "10.00", sku, name, buyerInfo } = req.body || {};
 
     const { data, debugId } = await createOrder({ currency, amount, buyerInfo });
 
@@ -206,20 +215,12 @@ app.post("/api/orders", async (req, res) => {
       meta: { sku, name },
       raw: data,
     });
-  } catch (e) {
-    res.status(e.status || 500).json({
-      error: e.message,
-      debugId: e.debugId,
-      details: e.data,
-    });
-  }
-});
+  }),
+);
 
-/**
- * 2) Get order
- */
-app.get("/api/orders/:orderID", async (req, res) => {
-  try {
+app.get(
+  "/api/orders/:orderID",
+  asyncHandler(async (req, res) => {
     const { orderID } = req.params;
     const { data, debugId } = await getOrder(orderID);
 
@@ -233,20 +234,12 @@ app.get("/api/orders/:orderID", async (req, res) => {
       shipping: shipping || null,
       address: address || null,
     });
-  } catch (e) {
-    res.status(e.status || 500).json({
-      error: e.message,
-      debugId: e.debugId,
-      details: e.data,
-    });
-  }
-});
+  }),
+);
 
-/**
- * 3) Patch order (shipping dynamique)
- */
-app.patch("/api/orders/:orderID", async (req, res) => {
-  try {
+app.patch(
+  "/api/orders/:orderID",
+  asyncHandler(async (req, res) => {
     const { orderID } = req.params;
     const { currency = "USD", itemTotal, shippingValue } = req.body || {};
 
@@ -265,20 +258,12 @@ app.patch("/api/orders/:orderID", async (req, res) => {
     });
 
     res.json({ ok: true, debugId, raw: data });
-  } catch (e) {
-    res.status(e.status || 500).json({
-      error: e.message,
-      debugId: e.debugId,
-      details: e.data,
-    });
-  }
-});
+  }),
+);
 
-/**
- * 4) Capture order + store capture in transactions.json ✅
- */
-app.post("/api/orders/:orderID/capture", async (req, res) => {
-  try {
+app.post(
+  "/api/orders/:orderID/capture",
+  asyncHandler(async (req, res) => {
     const { orderID } = req.params;
     const { data, debugId } = await captureOrder(orderID);
 
@@ -292,24 +277,13 @@ app.post("/api/orders/:orderID/capture", async (req, res) => {
       captureId: capture?.id || null,
       raw: data,
     });
-  } catch (e) {
-    res.status(e.status || 500).json({
-      error: e.message,
-      debugId: e.debugId,
-      details: e.data,
-    });
-  }
-});
+  }),
+);
 
-/**
- * ---------- PHASE 3 BACKOFFICE ----------
- */
-
-/**
- * A) List stored transactions
- */
-app.get("/api/admin/transactions", basicAuthAdmin, async (req, res) => {
-  try {
+app.get(
+  "/api/admin/transactions",
+  basicAuthAdmin,
+  asyncHandler(async (req, res) => {
     const { start, end, pageSize } = req.query || {};
 
     const now = new Date();
@@ -324,7 +298,6 @@ app.get("/api/admin/transactions", basicAuthAdmin, async (req, res) => {
 
     const txs = data.transaction_details || [];
 
-    // Keep all events (captures, refunds, authorizations) to avoid missing items when PayPal changes event codes.
     const normalized = txs.map((t) => {
       const info = t.transaction_info || {};
       const payer = t.payer_info || {};
@@ -347,21 +320,13 @@ app.get("/api/admin/transactions", basicAuthAdmin, async (req, res) => {
     });
 
     res.json({ ok: true, count: normalized.length, transactions: normalized, debugId });
-  } catch (e) {
-    res.status(e.status || 500).json({
-      error: e.message,
-      debugId: e.debugId,
-      details: e.data,
-    });
-  }
-});
+  }),
+);
 
-/**
- * B) Refund (full or partial)
- * body: { captureId: "...", amount?: "5.00" }
- */
-app.post("/api/admin/refunds", basicAuthAdmin, async (req, res) => {
-  try {
+app.post(
+  "/api/admin/refunds",
+  basicAuthAdmin,
+  asyncHandler(async (req, res) => {
     const { captureId, amount } = req.body || {};
     if (!captureId) {
       return res.status(400).json({ error: "Missing captureId" });
@@ -383,14 +348,8 @@ app.post("/api/admin/refunds", basicAuthAdmin, async (req, res) => {
       refundId: data.id,
       refund: data,
     });
-  } catch (e) {
-    res.status(e.status || 500).json({
-      error: e.message,
-      debugId: e.debugId,
-      details: e.data,
-    });
-  }
-});
+  }),
+);
 
 const port = process.env.PORT || 3001;
 app.listen(port, () => {

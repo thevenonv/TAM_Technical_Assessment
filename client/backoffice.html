@@ -12,16 +12,12 @@
       <div class="top">
         <div>
           <h1>Backoffice Refunds (Phase 3)</h1>
-          <div class="sub">Live via PayPal only: no local storage; refunds (full or partial) happen directly.</div>
+          <div class="sub">No local storage.</div>
         </div>
         <div class="row">
           <button id="refreshBtn" class="secondary">Refresh</button>
           <a href="index.html" style="text-decoration:none;"><button class="secondary">↩ Storefront</button></a>
         </div>
-      </div>
-
-      <div class="small">
-        Tip: If you enabled Basic Auth on the server, your browser will ask credentials when loading this page’s requests.
       </div>
 
       <div class="row">
@@ -34,10 +30,11 @@
           <tr>
             <th>Order</th>
             <th>Capture ID</th>
+            <th>Date</th>
             <th>Amount</th>
             <th>Refund</th>
             <th>Actions</th>
-            <th>Refund history</th>
+            <th class="col-refund-history">Refund history</th>
           </tr>
         </thead>
         <tbody id="tbody">

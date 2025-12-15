@@ -1,4 +1,4 @@
-import "dotenv/config";
+﻿import "dotenv/config";
 
 const {
   PAYPAL_CLIENT_ID,
@@ -66,7 +66,7 @@ async function paypalFetch(path, { method = "GET", token, body } = {}) {
   return { data, debugId };
 }
 
-// --- helpers for Phase 2 buyer info -> PayPal shipping/payer ---
+// Normalize optional buyer info to the format expected by PayPal
 function normalizeBuyerInfo(buyerInfo) {
   if (!buyerInfo || typeof buyerInfo !== "object") return null;
 
@@ -77,13 +77,12 @@ function normalizeBuyerInfo(buyerInfo) {
   const shippingAddress = {
     address_line_1: a.address_line_1 ? String(a.address_line_1).trim() : undefined,
     address_line_2: a.address_line_2 ? String(a.address_line_2).trim() : undefined,
-    admin_area_2: a.admin_area_2 ? String(a.admin_area_2).trim() : undefined, // city
-    admin_area_1: a.admin_area_1 ? String(a.admin_area_1).trim().toUpperCase() : undefined, // state
+    admin_area_2: a.admin_area_2 ? String(a.admin_area_2).trim() : undefined,
+    admin_area_1: a.admin_area_1 ? String(a.admin_area_1).trim().toUpperCase() : undefined,
     postal_code: a.postal_code ? String(a.postal_code).trim() : undefined,
     country_code: a.country_code ? String(a.country_code).trim().toUpperCase() : undefined,
   };
 
-  // only keep if minimally valid
   const hasMinAddress =
     shippingAddress.address_line_1 &&
     shippingAddress.admin_area_2 &&
@@ -98,21 +97,15 @@ function normalizeBuyerInfo(buyerInfo) {
   };
 }
 
-/**
- * Phase 1/2: Create order (intent CAPTURE)
- * amount: item total (shipping added later via PATCH)
- * buyerInfo: optional (Phase 2) -> sets purchase_units[0].shipping (+ optional payer email)
- */
 export async function createOrder({ currency = "USD", amount = "10.00", buyerInfo } = {}) {
   const token = await getAccessToken();
-
   const norm = normalizeBuyerInfo(buyerInfo);
 
   const body = {
     intent: "CAPTURE",
     purchase_units: [
       {
-        reference_id: "default", // ✅ ensures your PATCH path matches
+        reference_id: "default", // keeps PATCH path stable
         amount: {
           currency_code: currency,
           value: amount,
@@ -131,7 +124,6 @@ export async function createOrder({ currency = "USD", amount = "10.00", buyerInf
     ],
   };
 
-  // ✅ inject shipping address from Phase 2 form (if provided)
   if (norm?.shippingAddress) {
     body.purchase_units[0].shipping = {
       name: norm.fullName ? { full_name: norm.fullName } : undefined,
@@ -139,7 +131,6 @@ export async function createOrder({ currency = "USD", amount = "10.00", buyerInf
     };
   }
 
-  // ✅ optional: set payer email (PayPal may ignore/override in some flows)
   if (norm?.email) {
     body.payer = { email_address: norm.email };
   }
@@ -152,11 +143,6 @@ export async function getOrder(orderID) {
   return paypalFetch(`/v2/checkout/orders/${orderID}`, { method: "GET", token });
 }
 
-/**
- * Update order to add shipping (PATCH)
- * shippingValue: ex "4.99"
- * IMPORTANT: total must match breakdown
- */
 export async function updateOrderShipping({ orderID, currency = "USD", itemTotal, shippingValue }) {
   const token = await getAccessToken();
 
@@ -192,8 +178,6 @@ export async function captureOrder(orderID) {
 export async function refundCapture({ captureId, currency = "USD", amount } = {}) {
   const token = await getAccessToken();
 
-  // Full refund => body vide
-  // Partial refund => body.amount requis
   const body =
     amount != null
       ? { amount: { currency_code: currency, value: Number(amount).toFixed(2) } }
@@ -218,7 +202,6 @@ export async function getCaptureDetails(captureId) {
 
 function toReportingISO(date) {
   const d = date instanceof Date ? date : new Date(date);
-  // PayPal reporting wants YYYY-MM-DDTHH:mm:ssZ (no milliseconds)
   return d.toISOString().replace(/\.\d{3}Z$/, "Z");
 }
 
@@ -231,7 +214,7 @@ export async function listTransactions({ startDate, endDate, pageSize = 200 } = 
 
   params.set("start_date", toReportingISO(start));
   params.set("end_date", toReportingISO(end));
-  const size = Math.max(1, Math.min(Number(pageSize) || 200, 500)); // PayPal max 500
+  const size = Math.max(1, Math.min(Number(pageSize) || 200, 500));
   params.set("page_size", String(size));
 
   return paypalFetch(`/v1/reporting/transactions?${params.toString()}`, {

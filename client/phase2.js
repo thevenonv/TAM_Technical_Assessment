@@ -118,6 +118,7 @@
     if (!a.admin_area_2) errs.push("City is required.");
     if (!a.admin_area_1 || a.admin_area_1.length !== 2) errs.push("State must be 2 letters.");
     if (!a.postal_code) errs.push("Postal code is required.");
+    else if (!/^[0-9]{5}$/.test(a.postal_code)) errs.push("Postal code must be 5 digits.");
     if (!a.country_code) errs.push("Country is required.");
     if (info.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(info.email)) {
       errs.push("Email format is invalid.");
@@ -162,23 +163,21 @@
 
   buyerForm.onsubmit = (e) => {
     e.preventDefault();
-    try {
-      const info = readBuyerInfo();
-      const errs = validateBuyerInfo(info);
-      if (errs.length) {
-        throw new Error(errs.join(" "));
-      }
-      buyerInfo = info;
-      setNotice(buyerStatus, "success", "Buyer info saved. Choose a payment method below.");
-      show(paymentSection);
-      paymentSection?.scrollIntoView({ behavior: "smooth", block: "start" });
-      hide(globalStatus);
-      hide(paypalStatus);
-      hide(cardStatus);
-    } catch (err) {
-      setNotice(buyerStatus, "danger", err.message || "Invalid buyer info");
+    const info = readBuyerInfo();
+    const errs = validateBuyerInfo(info);
+    if (errs.length) {
+      setNotice(buyerStatus, "danger", errs.join(" "));
       hide(paymentSection);
+      buyerInfo = null;
+      return;
     }
+    buyerInfo = info;
+    setNotice(buyerStatus, "success", "Buyer info saved. Choose a payment method below.");
+    show(paymentSection);
+    paymentSection?.scrollIntoView({ behavior: "smooth", block: "start" });
+    hide(globalStatus);
+    hide(paypalStatus);
+    hide(cardStatus);
   };
 
   editBuyerBtn.onclick = () => {

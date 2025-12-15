@@ -7,23 +7,10 @@ const filterSellBtn = document.getElementById("filterSell");
 const filterRefundsBtn = document.getElementById("filterRefunds");
 
 let flowFilter = "sell"; // "sell" -> positive amounts, "refund" -> negative amounts
-const localRefunds = {}; // optimistic refunds per captureId
 
 function log(x) {
   logEl.textContent =
     (typeof x === "string" ? x : JSON.stringify(x, null, 2)) + "\n\n" + logEl.textContent;
-}
-
-async function fetchJson(url, options) {
-  const res = await fetch(url, options);
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    const err = new Error(data.error || `HTTP ${res.status}`);
-    err.status = res.status;
-    err.data = data;
-    throw err;
-  }
-  return data;
 }
 
 function pill(status) {
@@ -59,7 +46,7 @@ async function fetchRefund(refundId) {
   return data.refund;
 }
 
-async function renderRefundHistory(cellEl, refundIds) {
+async function renderRefundHistory(cellEl, refundIds, captureAmount) {
   if (!refundIds || refundIds.length === 0) {
     cellEl.textContent = "?";
     return;
@@ -83,13 +70,18 @@ async function renderRefundHistory(cellEl, refundIds) {
 
     cellEl.innerHTML = refunds
       .map((r) => {
-        const amt = r.amount == null ? "?" : Number(r.amount).toFixed(2);
+        const isFull = r.amount == null;
+        const base = isFull && Number.isFinite(Number(captureAmount))
+          ? Math.abs(Number(captureAmount))
+          : Number(r.amount ?? NaN);
+        const amtStr = Number.isFinite(base) ? Math.abs(base).toFixed(2) : "?";
+        const cur = r.currency || "USD";
         return `
           <div style="display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin-bottom:6px;">
-            ${pill(r.status)}
-            <span class="pill">${r.currency} ${amt}</span>
-            <span class="pill"><code>${r.id}</code></span>
-            <span class="pill">${fmtTime(r.create_time)}</span>
+            ${r.status ? pill(r.status) : ""}
+            <span class="pill">${cur} ${amtStr}</span>
+            ${r.id ? `<span class="pill"><code>${r.id}</code></span>` : ""}
+            ${r.create_time ? `<span class="pill">${fmtTime(r.create_time)}</span>` : ""}
           </div>
         `;
       })
@@ -99,7 +91,7 @@ async function renderRefundHistory(cellEl, refundIds) {
   }
 }
 
-async function renderRefundHistoryFromCapture(cellEl, captureId) {
+async function renderRefundHistoryFromCapture(cellEl, captureId, captureAmount) {
   if (!captureId) {
     cellEl.textContent = "No refunds";
     return;
@@ -116,34 +108,85 @@ async function renderRefundHistoryFromCapture(cellEl, captureId) {
 
     // Depending on PayPal response shape, normalize:
     const refunds = data.refunds?.refunds || data.refunds?.items || data.refunds || [];
+    const status = (data.captureStatus || "").toUpperCase();
+    const captureAmt =
+      Number.isFinite(Number(data.captureAmount))
+        ? Math.abs(Number(data.captureAmount))
+        : Number.isFinite(Number(captureAmount))
+        ? Math.abs(Number(captureAmount))
+        : null;
+    const captureCur = data.captureCurrency || "USD";
+
+    // If PayPal marks the capture as fully refunded, disable actions for this row
+    if (status === "REFUNDED") {
+      const row = document.querySelector(`tr[data-capture="${captureId}"]`);
+      if (row) {
+        row.dataset.remaining = "0";
+        const input = row.querySelector(`input[data-capture="${captureId}"]`);
+        const buttons = row.querySelectorAll(`button[data-capture="${captureId}"]`);
+        if (input) input.disabled = true;
+        buttons.forEach((b) => (b.disabled = true));
+      }
+    }
 
     if (!refunds.length) {
-      cellEl.textContent = "No refunds";
+      if (status === "REFUNDED") {
+        const amtStr = Number.isFinite(captureAmt) ? captureAmt.toFixed(2) : "?";
+        cellEl.innerHTML = `<span class="pill warn">Fully refunded (PayPal)</span> <span class="pill">${captureCur} ${amtStr}</span>`;
+      } else {
+        cellEl.textContent = "No refunds";
+      }
       return;
     }
 
-    cellEl.innerHTML = refunds
+    let rendered = refunds
       .map((r) => {
-        const amt = r.amount?.value != null ? Number(r.amount.value).toFixed(2) : "?";
+        const isFull = !r.amount || r.amount.value == null;
+        const base = isFull && Number.isFinite(Number(captureAmount))
+          ? Math.abs(Number(captureAmount))
+          : Number(r.amount?.value ?? NaN);
+        const amtStr = Number.isFinite(base) ? Math.abs(base).toFixed(2) : "?";
         const cur = r.amount?.currency_code || "USD";
         const t = r.create_time ? fmtTime(r.create_time) : "";
-        return `
-        <div style="display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin-bottom:6px;">
-          <span class="pill">${cur} ${amt}</span>
-          ${t ? `<span class="pill">${t}</span>` : ""}
-        </div>
-      `;
-      })
-      .join("");
+        return {
+          display: `
+          <div style="display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin-bottom:6px;">
+            <span class="pill">${cur} ${amtStr}</span>
+            ${t ? `<span class="pill">${t}</span>` : ""}
+          </div>
+        `,
+          amount: Number.isFinite(base) ? Math.abs(base) : 0,
+        };
+      });
+
+    const totalRefunded = rendered.reduce((s, r) => s + (r.amount || 0), 0);
+    cellEl.innerHTML = rendered.map((r) => r.display).join("");
+
+    // If total refunded equals or exceeds capture amount, treat as fully refunded (disable actions)
+    if (Number.isFinite(captureAmt) && totalRefunded >= captureAmt - 1e-2) {
+      const row = document.querySelector(`tr[data-capture="${captureId}"]`);
+      if (row) {
+        row.dataset.remaining = "0";
+        const input = row.querySelector(`input[data-capture="${captureId}"]`);
+        const buttons = row.querySelectorAll(`button[data-capture="${captureId}"]`);
+        if (input) input.disabled = true;
+        buttons.forEach((b) => (b.disabled = true));
+
+        cellEl.innerHTML += `<div style="margin-top:6px;"><span class="pill warn">Fully refunded (calculated)</span> <span class="pill">${captureCur} ${captureAmt.toFixed(2)}</span></div>`;
+      }
+    }
   } catch (err) {
-    // If PayPal says 404/NO REFUNDS, render empty
-    cellEl.innerHTML = err.message && err.message.includes("404")
-      ? "No refunds yet"
-      : `<span class="pill danger">${err.message}</span>`;
+    // If PayPal says 404/NO REFUNDS, keep existing display (likely lag) instead of wiping it
+    if (err.message && err.message.includes("404")) {
+      // Explicitly show "No refunds yet" so we don't leave the spinner
+      cellEl.textContent = "No refunds yet";
+      return;
+    }
+    cellEl.innerHTML = `<span class="pill danger">${err.message}</span>`;
   }
 }
 
-function renderRefundHistoryInline(cellEl, refunds) {
+function renderRefundHistoryInline(cellEl, refunds, captureAmount) {
   if (!refunds || !refunds.length) {
     cellEl.textContent = "No refunds yet";
     return;
@@ -151,17 +194,48 @@ function renderRefundHistoryInline(cellEl, refunds) {
 
   cellEl.innerHTML = refunds
     .map((r) => {
-      const amt = r.amount?.value != null ? Number(r.amount.value).toFixed(2) : "?";
+      const isFull = !r.amount || r.amount.value == null;
+      const base = isFull && Number.isFinite(captureAmount)
+        ? Math.abs(Number(captureAmount))
+        : Number(r.amount?.value ?? NaN);
+      const amtStr = Number.isFinite(base) ? Math.abs(base).toFixed(2) : "?";
       const cur = r.amount?.currency_code || "USD";
       const t = r.create_time ? fmtTime(r.create_time) : "";
       return `
         <div style="display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin-bottom:6px;">
-          <span class="pill">${cur} ${amt}</span>
+          <span class="pill">${cur} ${amtStr}</span>
           ${t ? `<span class="pill">${t}</span>` : ""}
         </div>
       `;
     })
     .join("");
+}
+
+// Fetch a specific capture by ID to surface it immediately (before reporting API latency)
+async function fetchSingleCapture(captureId) {
+  if (!captureId) return null;
+  const res = await fetch(`${SERVER_BASE}/api/admin/captures/${encodeURIComponent(captureId)}`);
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || "Failed to fetch capture");
+  const c = data.capture;
+  if (!c) return null;
+  return {
+    orderID: c.orderID || null,
+    captureId: c.captureId || captureId,
+    status: c.status || null,
+    amount: c.amount || null,
+    currency: c.currency || "USD",
+    createTime: c.createTime || null,
+    payerEmail: c.payerEmail || null,
+    eventCode: "CAPTURE",
+    debugId: data.debugId,
+    raw: c.raw,
+  };
+}
+
+function getRecentCaptureIdFromQuery() {
+  const params = new URLSearchParams(window.location.search);
+  return params.get("captureId") || params.get("recentCapture") || null;
 }
 
 async function loadTransactions() {
@@ -180,6 +254,15 @@ async function loadTransactions() {
   }
 
   const txs = data.transactions || [];
+  const extraCaptureId = getRecentCaptureIdFromQuery();
+  let extraCapture = null;
+  if (extraCaptureId) {
+    try {
+      extraCapture = await fetchSingleCapture(extraCaptureId);
+    } catch (e) {
+      console.warn("Failed to fetch live capture", e);
+    }
+  }
 
   // Build map of refunds (negative amounts) keyed by orderID (equals captureId of sale)
   const refundMap = {};
@@ -196,12 +279,29 @@ async function loadTransactions() {
         create_time: tx.createTime,
       });
     });
-  const filtered = txs.filter((tx) => {
+
+  const txsWithExtras = [...txs];
+  if (extraCapture) {
+    const already = txsWithExtras.some(
+      (t) =>
+        (t.captureId && t.captureId === extraCapture.captureId) ||
+        (extraCapture.orderID && t.orderID === extraCapture.orderID)
+    );
+    if (!already) {
+      txsWithExtras.unshift(extraCapture);
+    }
+  }
+
+  const filtered = txsWithExtras.filter((tx) => {
     const n = Number(tx.amount);
     if (!Number.isFinite(n)) return true;
     if (flowFilter === "sell") return n > 0;
     if (flowFilter === "refund") return n < 0;
     return true;
+  }).sort((a, b) => {
+    const ta = a.createTime ? Date.parse(a.createTime) : 0;
+    const tb = b.createTime ? Date.parse(b.createTime) : 0;
+    return tb - ta; // newest first
   });
 
   if (!filtered.length) {
@@ -211,18 +311,20 @@ async function loadTransactions() {
 
   tbody.innerHTML = "";
 
-  for (const tx of filtered) {
+  filtered.forEach((tx, idx) => {
     const tr = document.createElement("tr");
 
-    const captureId = tx.captureId || "";
-    const refundCellId = `rh-${captureId.replace(/[^a-zA-Z0-9_-]/g, "") || Math.random().toString(16).slice(2)}`;
+    const captureId = tx.captureId ? String(tx.captureId) : "";
+    const captureKey =
+      captureId ||
+      (tx.orderID ? String(tx.orderID) : "") ||
+      `row-${idx}-${Math.random().toString(16).slice(2)}`;
+    const refundCellId = `rh-${captureKey.replace(/[^a-zA-Z0-9_-]/g, "")}`;
 
     const amtNum = Number(tx.amount);
     const isRefundFlow = Number.isFinite(amtNum) && amtNum < 0;
-    const historyId = isRefundFlow ? (tx.orderID || captureId) : captureId;
-    const refundsFromApi = refundMap[captureId] || refundMap[tx.orderID] || [];
-    const refundsLocal = localRefunds[captureId] || [];
-    const refundsForCapture = [...refundsFromApi, ...refundsLocal];
+    const historyId = isRefundFlow ? (tx.orderID || captureId) : captureKey;
+    const refundsForCapture = refundMap[captureId] || refundMap[tx.orderID] || [];
     const refundedSum = (refundsForCapture || []).reduce(
       (s, r) => s + Math.abs(Number(r.amount?.value || 0)),
       0
@@ -236,25 +338,28 @@ async function loadTransactions() {
 
     tr.dataset.remaining = remainingRefundable;
     tr.dataset.currency = tx.currency || "USD";
+    tr.dataset.capture = captureKey;
+    tr.dataset.captureAmount = amtNum;
 
     tr.innerHTML = `
       <td><code>${tx.orderID || "?"}</code></td>
       <td><code>${captureId || "?"}</code></td>
+      <td>${fmtTime(tx.createTime) || "?"}</td>
       <td>${tx.error ? "?" : money(tx)}</td>
       <td>
-        <input class="amt" placeholder="(full)" data-capture="${captureId}" ${
+        <input class="amt" placeholder="(full)" data-capture="${captureKey}" ${
           isRefundFlow || isFullyRefunded ? "disabled" : ""
         } />
       </td>
       <td>
-        <button class="ghost" data-action="refund" data-capture="${captureId}" ${
+        <button class="ghost" data-action="refund" data-capture="${captureKey}" ${
           isRefundFlow || isFullyRefunded ? "disabled" : ""
         }>Partial refund</button>
-        <button data-action="full-refund" data-capture="${captureId}" ${
+        <button data-action="full-refund" data-capture="${captureKey}" ${
           isRefundFlow || isFullyRefunded ? "disabled" : ""
         }>Full refund</button>
       </td>
-      <td id="${refundCellId}">
+      <td id="${refundCellId}" class="col-refund-history">
         ${tx.error ? `<span class="pill danger">${tx.error}</span>` : `<span class="pill">No refunds yet</span>`}
       </td>
     `;
@@ -266,17 +371,17 @@ async function loadTransactions() {
       if (isRefundFlow) {
         cellEl.textContent = "-";
       } else if (refundsForCapture && refundsForCapture.length) {
-        renderRefundHistoryInline(cellEl, refundsForCapture);
+        renderRefundHistoryInline(cellEl, refundsForCapture, amtNum);
       } else if (!historyId) {
         cellEl.innerHTML = `<span class="pill">No refunds yet</span>`;
       } else {
-        renderRefundHistoryFromCapture(cellEl, historyId);
+        renderRefundHistoryFromCapture(cellEl, historyId, amtNum);
       }
     }
 
     // disable actions if amount field is empty
-    const amtInput = tr.querySelector(`input[data-capture="${captureId}"]`);
-    const buttons = tr.querySelectorAll(`button[data-capture="${captureId}"]`);
+    const amtInput = tr.querySelector(`input[data-capture="${captureKey}"]`);
+    const buttons = tr.querySelectorAll(`button[data-capture="${captureKey}"]`);
     const toggleButtons = () => {
       // Keep buttons enabled visually; validation happens on click
     };
@@ -284,7 +389,7 @@ async function loadTransactions() {
       amtInput.addEventListener("input", toggleButtons);
       toggleButtons();
     }
-  }
+  });
 }
 
 async function refundCapture(captureId, amount) {
@@ -333,18 +438,7 @@ async function refundCapture(captureId, amount) {
     debugId: data.debugId,
   });
 
-  // Optimistic cache of the new refund for immediate UI update
-  const cacheCaptureId = payload.captureId;
-  const existing = localRefunds[cacheCaptureId] || [];
-  const refundEntry = {
-    id: data.refund?.id || data.refundId,
-    status: data.refund?.status,
-    amount: data.refund?.amount || (payload.amount ? { value: payload.amount, currency_code: "USD" } : null),
-    create_time: data.refund?.create_time || new Date().toISOString(),
-  };
-  localRefunds[cacheCaptureId] = [refundEntry, ...existing];
-
-  return data; // allow caller to optimistically refresh history
+  return data;
 }
 
 tbody.addEventListener("click", async (e) => {
@@ -384,8 +478,10 @@ tbody.addEventListener("click", async (e) => {
       setTimeout(() => {
         const cellId = `rh-${captureId.replace(/[^a-zA-Z0-9_-]/g, "")}`;
         const cellEl = document.getElementById(cellId);
+        const row = document.querySelector(`tr[data-capture="${captureId}"]`);
+        const captureAmt = row ? Number(row.dataset.captureAmount) : undefined;
         if (cellEl) {
-          renderRefundHistoryFromCapture(cellEl, captureId);
+          renderRefundHistoryFromCapture(cellEl, captureId, captureAmt);
         }
       }, 400);
 
@@ -393,6 +489,29 @@ tbody.addEventListener("click", async (e) => {
     } catch (err) {
       console.error(err);
       alert(err.message);
+      // If PayPal reports the capture is already fully refunded, refresh UI and disable actions
+      if (err?.message && err.message.toLowerCase().includes("fully refunded")) {
+        const captureId = btn.dataset.capture;
+        // Mark row as fully refunded in UI (no local cache; just a visual hint)
+        const row = document.querySelector(`tr[data-capture="${captureId}"]`);
+        if (row) {
+          row.dataset.remaining = "0";
+          const input = row.querySelector(`input[data-capture="${captureId}"]`);
+          const buttons = row.querySelectorAll(`button[data-capture="${captureId}"]`);
+          if (input) input.disabled = true;
+          buttons.forEach((b) => (b.disabled = true));
+
+          const cellId = `rh-${captureId.replace(/[^a-zA-Z0-9_-]/g, "")}`;
+          const cellEl = document.getElementById(cellId);
+          if (cellEl) {
+            cellEl.innerHTML = `<span class="pill warn">Already fully refunded</span>`;
+            const captureAmt = Number(row.dataset.captureAmount);
+            renderRefundHistoryFromCapture(cellEl, captureId, captureAmt);
+          }
+        } else {
+          await loadTransactions();
+        }
+      }
     } finally {
       btn.disabled = false;
     }
@@ -443,4 +562,3 @@ if (filterRefundsBtn) {
     alert(e.message);
   }
 })();
-

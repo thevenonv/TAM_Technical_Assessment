@@ -193,7 +193,6 @@
       const SERVER_BASE = "http://localhost:3001";
       const CURRENCY = "USD";
 
-      // ✅ set cohérent d’images (Unsplash) — propre, même style
       const products = [
         {
             id: "hoodie",
@@ -230,7 +229,7 @@
       let selected = products[0];
     </script>
 
-    <!-- ✅ IMPORTANT: one single PayPal JS SDK load (buttons + card-fields) -->
+    <!-- (buttons + card-fields) -->
     <script src="https://www.paypal.com/sdk/js?client-id=ASbueoig2hEMWPriVDVgiBGKhULs18A7JSiH-C3rCz7otPKDA1wIBWM-q91MBhyei0a3hsORON91VV6q&currency=USD&intent=capture&components=buttons,card-fields"></script>
 
     <!-- Phase 2 logic -->
@@ -283,7 +282,6 @@
 
             const ok = errs.length === 0;
 
-            // ⬇️ IMPORTANT : on n’affiche les erreurs QUE si submit a déjà eu lieu
             if (hasSubmitted) {
                 els.errors.style.display = ok ? "none" : "block";
                 els.errors.innerHTML = ok ? "" : "⚠️ " + errs.join("<br>• ");
@@ -308,7 +306,7 @@
         });
 
         document.getElementById("buyerForm").addEventListener("submit", (e) => {
-        hasSubmitted = true; // 🔥 clé du comportement UX
+        hasSubmitted = true;
         normalize();
 
         if (!validate()) {
@@ -324,19 +322,17 @@
         const paymentSection = document.getElementById("paymentSection");
 
         buyerForm.addEventListener("submit", (e) => {
-        e.preventDefault();          // ⛔ stop le submit HTML
+        e.preventDefault();
         hasSubmitted = true;
 
         normalize();
         const ok = validate();
 
         if (!ok) {
-            // ❌ INVALID → on reste sur le formulaire
             paymentSection.classList.add("hidden");
             return;
         }
 
-        // ✅ VALID → on ouvre la section paiement
         paymentSection.classList.remove("hidden");
 
         document.getElementById("buyerStatus").className = "notice success";

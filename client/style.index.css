@@ -1,4 +1,4 @@
-
+﻿
       .brand{
         display:flex;
         align-items:center;
@@ -158,7 +158,7 @@
       .product img{
         width: 100%;
         height: 120px;
-        object-fit: cover; /* plus joli/cohérent que contain */
+        object-fit: cover; /* plus joli/cohÃ©rent que contain */
         border-radius: 12px;
         background: rgba(255,255,255,.04);
         border: 1px solid rgba(255,255,255,.06);
