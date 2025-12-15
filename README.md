@@ -1,4 +1,4 @@
-````md
+```
 # PayPal Payment Integration – Technical Assessment
 ---
 
@@ -60,7 +60,7 @@ The integration strictly follows PayPal best practices and uses **no local persi
 ```env
 PAYPAL_CLIENT_ID=your_sandbox_client_id
 PAYPAL_SECRET=your_sandbox_client_secret
-````
+```
 
 ### Run the Application
 
