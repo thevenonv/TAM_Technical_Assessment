@@ -1,4 +1,4 @@
-const SERVER_BASE = "http://localhost:3001";
+﻿const SERVER_BASE = "http://localhost:3001";
 
 const tbody = document.getElementById("tbody");
 const logEl = document.getElementById("log");
@@ -38,66 +38,13 @@ function fmtTime(iso) {
   }
 }
 
-// Fetch PayPal refund details (hydration) by refund ID
-async function fetchRefund(refundId) {
-  const res = await fetch(`${SERVER_BASE}/api/admin/refunds/${encodeURIComponent(refundId)}`);
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || "Refund fetch failed");
-  return data.refund;
-}
-
-async function renderRefundHistory(cellEl, refundIds, captureAmount) {
-  if (!refundIds || refundIds.length === 0) {
-    cellEl.textContent = "?";
-    return;
-  }
-
-  cellEl.innerHTML = `<span class="pill warn">Loading…</span>`;
-
-  try {
-    const refunds = await Promise.all(
-      refundIds.map(async (rid) => {
-        const r = await fetchRefund(rid);
-        return {
-          id: r.id,
-          status: r.status,
-          amount: r.amount?.value ?? null,
-          currency: r.amount?.currency_code ?? "USD",
-          create_time: r.create_time,
-        };
-      })
-    );
-
-    cellEl.innerHTML = refunds
-      .map((r) => {
-        const isFull = r.amount == null;
-        const base = isFull && Number.isFinite(Number(captureAmount))
-          ? Math.abs(Number(captureAmount))
-          : Number(r.amount ?? NaN);
-        const amtStr = Number.isFinite(base) ? Math.abs(base).toFixed(2) : "?";
-        const cur = r.currency || "USD";
-        return `
-          <div style="display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin-bottom:6px;">
-            ${r.status ? pill(r.status) : ""}
-            <span class="pill">${cur} ${amtStr}</span>
-            ${r.id ? `<span class="pill"><code>${r.id}</code></span>` : ""}
-            ${r.create_time ? `<span class="pill">${fmtTime(r.create_time)}</span>` : ""}
-          </div>
-        `;
-      })
-      .join("");
-  } catch (err) {
-    cellEl.innerHTML = `<span class="pill danger">${err.message}</span>`;
-  }
-}
-
 async function renderRefundHistoryFromCapture(cellEl, captureId, captureAmount) {
   if (!captureId) {
     cellEl.textContent = "No refunds";
     return;
   }
 
-  cellEl.innerHTML = `<span class="pill warn">Loading…</span>`;
+  cellEl.innerHTML = `<span class="pill warn">Loading...</span>`;
 
   try {
     const res = await fetch(
@@ -106,7 +53,6 @@ async function renderRefundHistoryFromCapture(cellEl, captureId, captureAmount) 
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "Failed to fetch refunds");
 
-    // Depending on PayPal response shape, normalize:
     const refunds = data.refunds?.refunds || data.refunds?.items || data.refunds || [];
     const status = (data.captureStatus || "").toUpperCase();
     const captureAmt =
@@ -117,7 +63,6 @@ async function renderRefundHistoryFromCapture(cellEl, captureId, captureAmount) 
         : null;
     const captureCur = data.captureCurrency || "USD";
 
-    // If PayPal marks the capture as fully refunded, disable actions for this row
     if (status === "REFUNDED") {
       const row = document.querySelector(`tr[data-capture="${captureId}"]`);
       if (row) {
@@ -139,30 +84,28 @@ async function renderRefundHistoryFromCapture(cellEl, captureId, captureAmount) 
       return;
     }
 
-    let rendered = refunds
-      .map((r) => {
-        const isFull = !r.amount || r.amount.value == null;
-        const base = isFull && Number.isFinite(Number(captureAmount))
-          ? Math.abs(Number(captureAmount))
-          : Number(r.amount?.value ?? NaN);
-        const amtStr = Number.isFinite(base) ? Math.abs(base).toFixed(2) : "?";
-        const cur = r.amount?.currency_code || "USD";
-        const t = r.create_time ? fmtTime(r.create_time) : "";
-        return {
-          display: `
+    let rendered = refunds.map((r) => {
+      const isFull = !r.amount || r.amount.value == null;
+      const base = isFull && Number.isFinite(Number(captureAmount))
+        ? Math.abs(Number(captureAmount))
+        : Number(r.amount?.value ?? NaN);
+      const amtStr = Number.isFinite(base) ? Math.abs(base).toFixed(2) : "?";
+      const cur = r.amount?.currency_code || "USD";
+      const t = r.create_time ? fmtTime(r.create_time) : "";
+      return {
+        display: `
           <div style="display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin-bottom:6px;">
             <span class="pill">${cur} ${amtStr}</span>
             ${t ? `<span class="pill">${t}</span>` : ""}
           </div>
         `,
-          amount: Number.isFinite(base) ? Math.abs(base) : 0,
-        };
-      });
+        amount: Number.isFinite(base) ? Math.abs(base) : 0,
+      };
+    });
 
     const totalRefunded = rendered.reduce((s, r) => s + (r.amount || 0), 0);
     cellEl.innerHTML = rendered.map((r) => r.display).join("");
 
-    // If total refunded equals or exceeds capture amount, treat as fully refunded (disable actions)
     if (Number.isFinite(captureAmt) && totalRefunded >= captureAmt - 1e-2) {
       const row = document.querySelector(`tr[data-capture="${captureId}"]`);
       if (row) {
@@ -176,9 +119,7 @@ async function renderRefundHistoryFromCapture(cellEl, captureId, captureAmount) 
       }
     }
   } catch (err) {
-    // If PayPal says 404/NO REFUNDS, keep existing display (likely lag) instead of wiping it
     if (err.message && err.message.includes("404")) {
-      // Explicitly show "No refunds yet" so we don't leave the spinner
       cellEl.textContent = "No refunds yet";
       return;
     }
@@ -211,7 +152,6 @@ function renderRefundHistoryInline(cellEl, refunds, captureAmount) {
     .join("");
 }
 
-// Fetch a specific capture by ID to surface it immediately (before reporting API latency)
 async function fetchSingleCapture(captureId) {
   if (!captureId) return null;
   const res = await fetch(`${SERVER_BASE}/api/admin/captures/${encodeURIComponent(captureId)}`);
@@ -240,7 +180,7 @@ function getRecentCaptureIdFromQuery() {
 
 async function loadTransactions() {
   console.log("Loading transactions from", `${SERVER_BASE}/api/admin/transactions?pageSize=1000`);
-  tbody.innerHTML = `<tr><td colspan="7">Loading…</td></tr>`;
+  tbody.innerHTML = `<tr><td colspan="7">Loading...</td></tr>`;
   let data;
   try {
     const res = await fetch(`${SERVER_BASE}/api/admin/transactions?pageSize=1000`);
@@ -264,7 +204,6 @@ async function loadTransactions() {
     }
   }
 
-  // Build map of refunds (negative amounts) keyed by orderID (equals captureId of sale)
   const refundMap = {};
   txs
     .filter((tx) => Number.isFinite(Number(tx.amount)) && Number(tx.amount) < 0)
@@ -292,17 +231,19 @@ async function loadTransactions() {
     }
   }
 
-  const filtered = txsWithExtras.filter((tx) => {
-    const n = Number(tx.amount);
-    if (!Number.isFinite(n)) return true;
-    if (flowFilter === "sell") return n > 0;
-    if (flowFilter === "refund") return n < 0;
-    return true;
-  }).sort((a, b) => {
-    const ta = a.createTime ? Date.parse(a.createTime) : 0;
-    const tb = b.createTime ? Date.parse(b.createTime) : 0;
-    return tb - ta; // newest first
-  });
+  const filtered = txsWithExtras
+    .filter((tx) => {
+      const n = Number(tx.amount);
+      if (!Number.isFinite(n)) return true;
+      if (flowFilter === "sell") return n > 0;
+      if (flowFilter === "refund") return n < 0;
+      return true;
+    })
+    .sort((a, b) => {
+      const ta = a.createTime ? Date.parse(a.createTime) : 0;
+      const tb = b.createTime ? Date.parse(b.createTime) : 0;
+      return tb - ta;
+    });
 
   if (!filtered.length) {
     tbody.innerHTML = `<tr><td colspan="7">No transactions for this filter.</td></tr>`;
@@ -379,15 +320,11 @@ async function loadTransactions() {
       }
     }
 
-    // disable actions if amount field is empty
     const amtInput = tr.querySelector(`input[data-capture="${captureKey}"]`);
-    const buttons = tr.querySelectorAll(`button[data-capture="${captureKey}"]`);
-    const toggleButtons = () => {
-      // Keep buttons enabled visually; validation happens on click
-    };
     if (amtInput) {
-      amtInput.addEventListener("input", toggleButtons);
-      toggleButtons();
+      amtInput.addEventListener("input", () => {
+        // Placeholder for any future UI toggle logic
+      });
     }
   });
 }
@@ -420,7 +357,6 @@ async function refundCapture(captureId, amount) {
 
   const data = await res.json();
   if (!res.ok) {
-    // Friendly messages for common PayPal errors
     const issue =
       data?.details?.details?.find?.((d) => d.issue) ||
       (Array.isArray(data?.details) ? data.details.find((d) => d.issue) : null);
@@ -464,17 +400,13 @@ tbody.addEventListener("click", async (e) => {
           alert("Enter an amount greater than 0 for a partial refund.");
           return;
         }
-        // Prevent over-refund client-side: compare against transaction amount
         if (remaining != null && Number.isFinite(remaining) && num > remaining + 1e-9) {
-          alert(
-            `Amount exceeds remaining refundable balance (${remaining.toFixed(2)}).`
-          );
+          alert(`Amount exceeds remaining refundable balance (${remaining.toFixed(2)}).`);
           return;
         }
       }
       const refundResp = await refundCapture(captureId, amount);
       await loadTransactions();
-      // Optimistic refresh of refund history to mitigate PayPal reporting lag
       setTimeout(() => {
         const cellId = `rh-${captureId.replace(/[^a-zA-Z0-9_-]/g, "")}`;
         const cellEl = document.getElementById(cellId);
@@ -489,10 +421,8 @@ tbody.addEventListener("click", async (e) => {
     } catch (err) {
       console.error(err);
       alert(err.message);
-      // If PayPal reports the capture is already fully refunded, refresh UI and disable actions
       if (err?.message && err.message.toLowerCase().includes("fully refunded")) {
         const captureId = btn.dataset.capture;
-        // Mark row as fully refunded in UI (no local cache; just a visual hint)
         const row = document.querySelector(`tr[data-capture="${captureId}"]`);
         if (row) {
           row.dataset.remaining = "0";
@@ -552,7 +482,6 @@ if (filterRefundsBtn) {
   filterRefundsBtn.addEventListener("click", () => setFlowFilter("refund"));
 }
 
-// initial load
 (async () => {
   console.log("[backoffice] initial load");
   try {
