@@ -1,4 +1,3 @@
-```
 # PayPal Payment Integration – Technical Assessment
 ---
 
