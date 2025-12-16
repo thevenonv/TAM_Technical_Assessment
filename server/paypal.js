@@ -1,6 +1,4 @@
-﻿// paypal.js (ESM)
-
-import { Buffer } from "node:buffer";
+﻿import { Buffer } from "node:buffer";
 
 // Load .env ONLY when running locally.
 // On Render, you must use Environment Variables in the dashboard.

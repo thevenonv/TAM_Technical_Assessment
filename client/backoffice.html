@@ -12,7 +12,7 @@
       <div class="top">
         <div>
           <h1>Backoffice Refunds (Phase 3)</h1>
-          <div class="sub">No local storage.</div>
+          <div class="sub">Using Webhook to have live view.</div>
         </div>
         <div class="row">
           <button id="refreshBtn" class="secondary">Refresh</button>
@@ -23,6 +23,16 @@
       <div class="row">
         <button id="filterSell" class="toggle active">Sales (positive)</button>
         <button id="filterRefunds" class="toggle">Refunds (negative)</button>
+        <label style="margin-left:12px; color:#9ca3af; font-size:13px;">
+          Show
+          <select id="pageSize" style="background:#111827; color:#e5e7eb; border:1px solid #374151; padding:4px 8px; border-radius:6px;">
+            <option value="5" selected>5</option>
+            <option value="20">20</option>
+            <option value="50">50</option>
+            <option value="100">100</option>
+          </select>
+          rows
+        </label>
       </div>
 
       <table>

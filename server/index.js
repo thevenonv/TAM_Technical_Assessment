@@ -122,7 +122,18 @@ app.get(
 
 // Helper: fetch refunds for a capture (used by API + webhook)
 async function fetchCaptureRefunds(captureId) {
-  const { data: cap, debugId } = await getCaptureDetails(captureId);
+  let cap;
+  let debugId;
+  try {
+    const r = await getCaptureDetails(captureId);
+    cap = r.data;
+    debugId = r.debugId;
+  } catch (e) {
+    if ((e.status || 0) === 404) {
+      return { refunds: [], captureStatus: null, captureAmount: null, captureCurrency: null, debugId: e.debugId };
+    }
+    throw e;
+  }
   const captureStatus = cap?.status || null;
   const captureAmount = cap?.amount?.value || null;
   const captureCurrency = cap?.amount?.currency_code || null;
@@ -479,16 +490,16 @@ app.post(
         });
 
         console.log("[WEBHOOK] stored refund snapshot", captureId, "total=", refundsTotal);
-      } catch (e) {
-        console.warn("[WEBHOOK] fetchCaptureRefunds failed; storing minimal refund info", e?.message);
-        webhookRefunds.set(captureId, {
-          captureId,
-          total: amount ? Math.abs(Number(amount)) : null,
-          currency,
-          status,
-          updatedAt: now,
-        });
-      }
+    } catch (e) {
+      console.warn("[WEBHOOK] fetchCaptureRefunds failed; storing minimal refund info", e?.message || e);
+      webhookRefunds.set(captureId, {
+        captureId,
+        total: amount ? Math.abs(Number(amount)) : null,
+        currency,
+        status,
+        updatedAt: now,
+      });
+    }
 
       return res.sendStatus(200);
     }
@@ -523,6 +534,14 @@ app.get(
   "/api/admin/webhooks/captures",
   asyncHandler(async (_req, res) => {
     res.json({ ok: true, data: Array.from(webhookCaptures.values()) });
+  })
+);
+
+// List all webhook refund snapshots (real-time refunds)
+app.get(
+  "/api/admin/webhooks/refunds",
+  asyncHandler(async (_req, res) => {
+    res.json({ ok: true, data: Array.from(webhookRefunds.values()) });
   })
 );
 

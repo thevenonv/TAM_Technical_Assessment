@@ -1,12 +1,17 @@
-// Use same origin by default; allow override via global if needed.
-const SERVER_BASE = window.SERVER_BASE || window.location.origin;
+const SERVER_BASE =
+  window.SERVER_BASE ||
+  (window.location.hostname === "localhost"
+    ? "https://tam-technical-assessment.onrender.com"
+    : window.location.origin);
 
 const tbody = document.getElementById("tbody");
 const refreshBtn = document.getElementById("refreshBtn");
 const filterSellBtn = document.getElementById("filterSell");
 const filterRefundsBtn = document.getElementById("filterRefunds");
+const pageSizeSelect = document.getElementById("pageSize");
 
 let flowFilter = "sell"; // "sell" => positive tx, "refund" => negative tx
+let maxRows = 5;
 
 function pill(status) {
   const s = (status || "").toUpperCase();
@@ -168,15 +173,28 @@ async function fetchWebhookCapture(captureId) {
   }
 }
 
+async function fetchWebhookRefundsList() {
+  try {
+    const res = await fetch(`${SERVER_BASE}/api/admin/webhooks/refunds`);
+    const data = await res.json();
+    if (!res.ok || !Array.isArray(data?.data)) return [];
+    return data.data;
+  } catch {
+    return [];
+  }
+}
+
 async function loadTransactions() {
   tbody.innerHTML = `<tr><td colspan="6">Loading...</td></tr>`;
 
   let data;
   let webhookCaptures = [];
+  let webhookRefunds = [];
   try {
-    const [resTx, resWebhookCaps] = await Promise.all([
+    const [resTx, resWebhookCaps, resWebhookRefunds] = await Promise.all([
       fetch(`${SERVER_BASE}/api/admin/transactions?pageSize=1000`),
       fetch(`${SERVER_BASE}/api/admin/webhooks/captures`).catch(() => null),
+      fetch(`${SERVER_BASE}/api/admin/webhooks/refunds`).catch(() => null),
     ]);
     data = await resTx.json();
     if (!resTx.ok) throw new Error(data.error || "Failed to load transactions");
@@ -184,23 +202,50 @@ async function loadTransactions() {
       const w = await resWebhookCaps.json();
       webhookCaptures = Array.isArray(w.data) ? w.data : [];
     }
+    if (resWebhookRefunds && resWebhookRefunds.ok) {
+      const w = await resWebhookRefunds.json();
+      webhookRefunds = Array.isArray(w.data) ? w.data : [];
+    }
   } catch (err) {
     tbody.innerHTML = `<tr><td colspan="7" style="color:#fca5a5;">${err.message}</td></tr>`;
     return;
   }
 
   const txs = data.transactions || [];
+  const webhookRefundMap = webhookRefunds.reduce((acc, r) => {
+    if (r.captureId) acc[r.captureId] = r;
+    return acc;
+  }, {});
+
   // Merge in captures seen via webhook but not yet in reporting
   webhookCaptures.forEach((cap) => {
     const already = txs.some((t) => t.captureId === cap.captureId);
     if (!already && cap.captureId) {
       txs.push({
+        _fromWebhook: true,
         orderID: cap.orderID || null,
         captureId: cap.captureId,
         status: cap.status || "COMPLETED",
         amount: cap.amount != null ? String(cap.amount) : null,
         currency: cap.currency || "USD",
         createTime: cap.createdAt || cap.updatedAt || null,
+      });
+    }
+  });
+  // Merge in refunds seen via webhook (as negative amounts)
+  webhookRefunds.forEach((ref) => {
+    const already = txs.some(
+      (t) => t.captureId === ref.captureId && Number(t.amount) < 0,
+    );
+    if (!already && ref.captureId && ref.total != null) {
+      txs.push({
+        _fromWebhook: true,
+        orderID: null,
+        captureId: ref.captureId,
+        status: ref.status || "REFUNDED",
+        amount: String(-Math.abs(Number(ref.total))),
+        currency: ref.currency || "USD",
+        createTime: ref.updatedAt || ref.createdAt || null,
       });
     }
   });
@@ -225,16 +270,21 @@ async function loadTransactions() {
   const filtered = txs
     .filter((tx) => {
       const n = Number(tx.amount);
-      if (!Number.isFinite(n)) return false;
-      if (flowFilter === "sell") return n > 0;
-      if (flowFilter === "refund") return n < 0;
+      if (!Number.isFinite(n) && !tx._fromWebhook) return false;
+      if (Number.isFinite(n)) {
+        if (flowFilter === "sell") return n > 0;
+        if (flowFilter === "refund") return n < 0;
+      }
+      // Allow webhook-only captures (amount might be missing)
+      if (tx._fromWebhook) return flowFilter !== "refund";
       return true;
     })
     .sort((a, b) => {
       const ta = a.createTime ? Date.parse(a.createTime) : 0;
       const tb = b.createTime ? Date.parse(b.createTime) : 0;
       return tb - ta;
-    });
+    })
+    .slice(0, maxRows); // limit for performance
 
   if (!filtered.length) {
     tbody.innerHTML = `<tr><td colspan="6">No transactions for this filter.</td></tr>`;
@@ -252,6 +302,8 @@ async function loadTransactions() {
     const reportedRefunds = refundMap[captureId] || refundMap[tx.orderID] || [];
     const refundedSum = reportedRefunds.reduce((s, r) => s + Math.abs(Number(r.amount || 0)), 0);
     const remaining = Math.max(0, txAmount - refundedSum);
+    const webhookSnap = webhookRefundMap[captureId];
+    const webhookTotal = webhookSnap?.total != null ? Math.abs(Number(webhookSnap.total)) : null;
 
     tr.dataset.captureId = captureId;
     tr.dataset.remaining = String(remaining);
@@ -262,7 +314,14 @@ async function loadTransactions() {
       <td><code id="${rowId}-capture">${captureId || "-"}</code></td>
       <td id="${rowId}-date">${fmtTime(tx.createTime)}</td>
       <td>${fmtMoney(tx.amount, tx.currency)}</td>
-      <td id="${rowId}-refund">Loading...</td>
+      <td id="${rowId}-refund">
+        ${
+          webhookTotal != null
+            ? `${pill(webhookSnap?.status || "PARTIALLY_REFUNDED")}
+               <span class="pill">Refunded ${fmtMoney(webhookTotal, webhookSnap.currency || tx.currency)}</span>`
+            : "Loading..."
+        }
+      </td>
       <td>
         ${
           Number(tx.amount) > 0
@@ -311,10 +370,12 @@ async function loadTransactions() {
         // Prefer webhook (real-time) if present
         fetchWebhookRefund(captureId)
           .then((webhook) => {
-            const webhookTotal = webhook?.total != null ? Math.abs(Number(webhook.total)) : null;
+            const webhookTotalFetched = webhook?.total != null ? Math.abs(Number(webhook.total)) : null;
+            const webhookTotalEffective =
+              webhookTotalFetched != null ? webhookTotalFetched : webhookTotal != null ? webhookTotal : null;
             const usedTotal = Math.max(
               refundedSum,
-              webhookTotal != null ? webhookTotal : 0,
+              webhookTotalEffective != null ? webhookTotalEffective : 0,
               summary.total || 0,
             );
             const remainingAfter = Math.max(0, txAmount - usedTotal);
@@ -322,12 +383,16 @@ async function loadTransactions() {
 
             const statusLabel =
               webhook?.status ||
+              webhookSnap?.status ||
               summary.status ||
               (usedTotal >= txAmount - 1e-2 ? "REFUNDED" : "PARTIALLY_REFUNDED");
 
+            const finalStatus =
+              usedTotal < 1e-2 && statusLabel === "COMPLETED" ? "NOT_REFUNDED" : statusLabel;
+
             refundCell.innerHTML = `
-              ${pill(statusLabel)}
-              <span class="pill">Refunded ${fmtMoney(usedTotal, webhook?.currency || summary.currency)}</span>
+              ${pill(finalStatus)}
+              <span class="pill">Refunded ${fmtMoney(usedTotal, webhook?.currency || webhookSnap?.currency || summary.currency)}</span>
             `;
 
             if (remainingAfter <= 0) {
@@ -414,5 +479,12 @@ function setFlowFilter(next) {
 if (refreshBtn) refreshBtn.addEventListener("click", () => loadTransactions());
 if (filterSellBtn) filterSellBtn.addEventListener("click", () => setFlowFilter("sell"));
 if (filterRefundsBtn) filterRefundsBtn.addEventListener("click", () => setFlowFilter("refund"));
+if (pageSizeSelect) {
+  pageSizeSelect.addEventListener("change", () => {
+    const val = Number(pageSizeSelect.value);
+    maxRows = Number.isFinite(val) && val > 0 ? val : 5;
+    loadTransactions();
+  });
+}
 
 loadTransactions();
