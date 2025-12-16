@@ -11,7 +11,7 @@ const filterRefundsBtn = document.getElementById("filterRefunds");
 const pageSizeSelect = document.getElementById("pageSize");
 
 let flowFilter = "sell"; // "sell" => positive tx, "refund" => negative tx
-let maxRows = 5;
+let maxRows = Number(pageSizeSelect?.value) || 5;
 
 function pill(status) {
   const s = (status || "").toUpperCase();
@@ -151,9 +151,24 @@ async function fetchRefundSummary(captureId, fallback = null) {
 
 async function fetchWebhookRefund(captureId) {
   if (!captureId) return null;
+  try {
+    const res = await fetch(
+      `${SERVER_BASE}/api/admin/webhooks/refunds/${encodeURIComponent(captureId)}`
+    );
+    const data = await res.json();
+    if (!res.ok || !data?.data) return null;
+    return data.data;
+  } catch {
+    return null;
+  }
+}
+
+async function fetchWebhookCapture(captureId) {
   if (!captureId) return null;
   try {
-    const res = await fetch(`${SERVER_BASE}/api/admin/webhooks/captures/${encodeURIComponent(captureId)}`);
+    const res = await fetch(
+      `${SERVER_BASE}/api/admin/webhooks/captures/${encodeURIComponent(captureId)}`
+    );
     const data = await res.json();
     if (!res.ok || !data?.data) return null;
     return data.data;
@@ -170,7 +185,7 @@ async function loadTransactions() {
   let webhookRefunds = [];
   try {
     const [resTx, resWebhookCaps, resWebhookRefunds] = await Promise.all([
-      fetch(`${SERVER_BASE}/api/admin/transactions?pageSize=1000`),
+      fetch(`${SERVER_BASE}/api/admin/transactions?pageSize=500`),
       fetch(`${SERVER_BASE}/api/admin/webhooks/captures`).catch(() => null),
       fetch(`${SERVER_BASE}/api/admin/webhooks/refunds`).catch(() => null),
     ]);
@@ -261,17 +276,19 @@ async function loadTransactions() {
       const ta = a.createTime ? Date.parse(a.createTime) : 0;
       const tb = b.createTime ? Date.parse(b.createTime) : 0;
       return tb - ta;
-    })
-    .slice(0, maxRows); // limit for performance
+    });
 
-  if (!filtered.length) {
+  const limit = Number.isFinite(maxRows) && maxRows > 0 ? maxRows : 5;
+  const limited = limit ? filtered.slice(0, limit) : filtered;
+
+  if (!limited.length) {
     tbody.innerHTML = `<tr><td colspan="6">No transactions for this filter.</td></tr>`;
     return;
   }
 
   tbody.innerHTML = "";
 
-  filtered.forEach((tx, idx) => {
+  limited.forEach((tx, idx) => {
     const tr = document.createElement("tr");
     const captureId = tx.captureId || "";
     const rowId = `row-${idx}-${captureId || tx.orderID || "tx"}`;
@@ -292,14 +309,14 @@ async function loadTransactions() {
       <td><code id="${rowId}-capture">${captureId || "-"}</code></td>
       <td id="${rowId}-date">${fmtTime(tx.createTime)}</td>
       <td>${fmtMoney(tx.amount, tx.currency)}</td>
-      <td id="${rowId}-refund">
-        ${
-          webhookTotal != null
+      <td id="${rowId}-refund">${
+        Number(tx.amount) > 0
+          ? webhookTotal != null
             ? `${pill(webhookSnap?.status || "PARTIALLY_REFUNDED")}
                <span class="pill">Refunded ${fmtMoney(webhookTotal, webhookSnap.currency || tx.currency)}</span>`
             : "Loading..."
-        }
-      </td>
+          : "-"
+      }</td>
       <td>
         ${
           Number(tx.amount) > 0
@@ -317,11 +334,8 @@ async function loadTransactions() {
 
     tbody.appendChild(tr);
 
-    if (!captureId || Number(tx.amount) <= 0) {
-      const refundCell = document.getElementById(`${rowId}-refund`);
-      if (refundCell) refundCell.textContent = captureId ? "n/a" : "-";
-      return;
-    }
+    // If this is a refund row or missing captureId, skip further processing
+    if (!captureId || Number(tx.amount) <= 0) return;
 
     // Prefer real-time capture info from webhook if present
     fetchWebhookCapture(captureId)
@@ -340,8 +354,8 @@ async function loadTransactions() {
       time: reportedRefunds[0]?.time || null,
     };
 
-      fetchRefundSummary(captureId, fallback)
-        .then((summary) => {
+    fetchRefundSummary(captureId, fallback)
+      .then((summary) => {
         const refundCell = document.getElementById(`${rowId}-refund`);
         if (!refundCell) return;
 
@@ -361,7 +375,10 @@ async function loadTransactions() {
 
         refundCell.innerHTML = `
           ${pill(finalStatus)}
-          <span class="pill">Refunded ${fmtMoney(usedTotal, webhookSnap?.currency || summary.currency || tx.currency)}</span>
+          <span class="pill">Refunded ${fmtMoney(
+            usedTotal,
+            webhookSnap?.currency || summary.currency || tx.currency
+          )}</span>
         `;
 
         if (remainingAfter <= 0) {
