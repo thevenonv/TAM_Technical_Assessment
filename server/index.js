@@ -426,7 +426,12 @@ app.post(
 app.get(
   "/api/admin/webhooks/refunds/:captureId",
   asyncHandler(async (req, res) => {
-    res.json({ ok: true, data: webhookRefunds.get(req.params.captureId) || null });
+    const entry = webhookRefunds.get(req.params.captureId) || null;
+    if (entry && !entry.orderID) {
+      const cap = webhookCaptures.get(req.params.captureId);
+      if (cap?.orderID) entry.orderID = cap.orderID;
+    }
+    res.json({ ok: true, data: entry });
   })
 );
 
@@ -447,7 +452,14 @@ app.get(
 app.get(
   "/api/admin/webhooks/refunds",
   asyncHandler(async (_req, res) => {
-    res.json({ ok: true, data: Array.from(webhookRefunds.values()) });
+    const data = Array.from(webhookRefunds.values()).map((r) => {
+      if (!r.orderID) {
+        const cap = webhookCaptures.get(r.captureId);
+        if (cap?.orderID) return { ...r, orderID: cap.orderID };
+      }
+      return r;
+    });
+    res.json({ ok: true, data });
   })
 );
 
