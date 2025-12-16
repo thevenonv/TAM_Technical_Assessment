@@ -1,11 +1,21 @@
 import "dotenv/config";
 
-const PAYPAL_CLIENT_ID = process.env.PAYPAL_CLIENT_ID;
-const PAYPAL_SECRET = process.env.PAYPAL_SECRET;
-const PAYPAL_ENV = process.env.PAYPAL_ENV || process.env.PAYPAL_MODE || "sandbox";
+const pick = (...values) => values.find((v) => v != null && String(v).trim() !== "")?.trim();
+
+const PAYPAL_CLIENT_ID = pick(
+  process.env.PAYPAL_CLIENT_ID,
+  process.env.PAYPAL_CLIENTID,
+  process.env.CLIENT_ID
+);
+const PAYPAL_SECRET = pick(
+  process.env.PAYPAL_SECRET,
+  process.env.PAYPAL_CLIENT_SECRET,
+  process.env.PAYPAL_CLIENTSECRET,
+  process.env.CLIENT_SECRET
+);
+const PAYPAL_ENV = pick(process.env.PAYPAL_ENV, process.env.PAYPAL_MODE) || "sandbox";
 const PAYPAL_BASE_URL =
-  process.env.PAYPAL_BASE_URL ||
-  process.env.PAYPAL_API_BASE ||
+  pick(process.env.PAYPAL_BASE_URL, process.env.PAYPAL_API_BASE) ||
   (PAYPAL_ENV === "live" ? "https://api-m.paypal.com" : "https://api-m.sandbox.paypal.com");
 
 if (!PAYPAL_CLIENT_ID || !PAYPAL_SECRET) {
