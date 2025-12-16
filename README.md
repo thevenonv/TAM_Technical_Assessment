@@ -8,8 +8,6 @@ This project demonstrates a complete PayPal payment flow including:
 - Secure server-side payment capture
 - Back-office refund management (full & partial) with PayPal webhooks for near real-time updates
 
-PayPal is the source of truth; no local JSON cache is used anymore.
-
 ## 2. Server-Side API Endpoints
 
 ### Storefront Endpoints

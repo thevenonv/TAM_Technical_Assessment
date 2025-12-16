@@ -100,15 +100,24 @@ async function fetchCaptureRefunds(captureId) {
     debugId = r.debugId;
   } catch (e) {
     if ((e.status || 0) === 404)
-      return { refunds: [], captureStatus: null, captureAmount: null, captureCurrency: null, debugId: e.debugId };
+      return {
+        refunds: [],
+        captureStatus: null,
+        captureAmount: null,
+        captureCurrency: null,
+        captureOrderID: null,
+        debugId: e.debugId,
+      };
     throw e;
   }
 
   const captureStatus = cap?.status || null;
   const captureAmount = cap?.amount?.value || null;
   const captureCurrency = cap?.amount?.currency_code || null;
+  const captureOrderID = cap?.supplementary_data?.related_ids?.order_id || null;
   const refundLink = (cap.links || []).find((l) => l.rel === "refund")?.href;
-  if (!refundLink) return { refunds: [], captureStatus, captureAmount, captureCurrency, debugId };
+  if (!refundLink)
+    return { refunds: [], captureStatus, captureAmount, captureCurrency, captureOrderID, debugId };
 
   const token = await getAccessToken();
   const r = await fetch(refundLink, {
@@ -121,7 +130,14 @@ async function fetchCaptureRefunds(captureId) {
 
   if (!r.ok) {
     if (r.status === 404 || r.status === 400 || r.status === 422) {
-      return { refunds: [], captureStatus, captureAmount, captureCurrency, debugId: refundsDebugId || debugId };
+      return {
+        refunds: [],
+        captureStatus,
+        captureAmount,
+        captureCurrency,
+        captureOrderID,
+        debugId: refundsDebugId || debugId,
+      };
     }
     const err = new Error("Failed to fetch refunds from PayPal");
     err.status = r.status;
@@ -130,7 +146,14 @@ async function fetchCaptureRefunds(captureId) {
     throw err;
   }
 
-  return { refunds: refundsData, captureStatus, captureAmount, captureCurrency, debugId: refundsDebugId || debugId };
+  return {
+    refunds: refundsData,
+    captureStatus,
+    captureAmount,
+    captureCurrency,
+    captureOrderID,
+    debugId: refundsDebugId || debugId,
+  };
 }
 
 app.get(
@@ -373,6 +396,7 @@ app.post(
           total: refundsTotal,
           currency: refundsData.captureCurrency || currency,
           status: refundsData.captureStatus || status,
+          orderID: refundsData.captureOrderID || resource?.supplementary_data?.related_ids?.order_id || null,
           refundId: refundId || null,
           updatedAt: now,
         });
@@ -384,6 +408,7 @@ app.post(
           total: amount ? Math.abs(Number(amount)) : null,
           currency,
           status,
+          orderID: resource?.supplementary_data?.related_ids?.order_id || null,
           refundId: refundId || null,
           updatedAt: now,
         });

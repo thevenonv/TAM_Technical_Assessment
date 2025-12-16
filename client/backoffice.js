@@ -233,7 +233,7 @@ async function loadTransactions() {
     if (!already && ref.captureId && ref.total != null) {
       txs.push({
         _fromWebhook: true,
-        orderID: null,
+        orderID: ref.orderID || null,
         captureId: ref.captureId,
         status: ref.status || "REFUNDED",
         amount: String(-Math.abs(Number(ref.total))),
@@ -311,9 +311,12 @@ async function loadTransactions() {
       <td>${fmtMoney(tx.amount, tx.currency)}</td>
       <td id="${rowId}-refund">${
         Number(tx.amount) > 0
-          ? webhookTotal != null
-            ? `${pill(webhookSnap?.status || "PARTIALLY_REFUNDED")}
-               <span class="pill">Refunded ${fmtMoney(webhookTotal, webhookSnap.currency || tx.currency)}</span>`
+          ? webhookTotal != null || refundedSum > 0
+            ? `${pill(webhookSnap?.status || (refundedSum > 0 ? "PARTIALLY_REFUNDED" : "NOT_REFUNDED"))}
+               <span class="pill">Refunded ${fmtMoney(
+                 webhookTotal != null ? webhookTotal : refundedSum,
+                 webhookSnap?.currency || tx.currency
+               )}</span>`
             : "Loading..."
           : "-"
       }</td>
@@ -359,33 +362,52 @@ async function loadTransactions() {
         const refundCell = document.getElementById(`${rowId}-refund`);
         if (!refundCell) return;
 
-        // Decide refunded total: prefer webhook snapshot, else summary/refunds
-        const usedTotal =
+        const updateCell = (usedTotalVal, statusVal, currencyVal) => {
+          const remainingAfter = Math.max(0, txAmount - usedTotalVal);
+          tr.dataset.remaining = String(remainingAfter);
+          const finalStatus =
+            usedTotalVal < 1e-2 && statusVal === "COMPLETED" ? "NOT_REFUNDED" : statusVal;
+
+          refundCell.innerHTML = `
+            ${pill(finalStatus)}
+            <span class="pill">Refunded ${fmtMoney(usedTotalVal, currencyVal)}</span>
+          `;
+
+          if (remainingAfter <= 0) {
+            const input = tr.querySelector(`input[data-row="${rowId}"]`);
+            const buttons = tr.querySelectorAll(`button[data-row="${rowId}"]`);
+            if (input) input.disabled = true;
+            buttons.forEach((b) => (b.disabled = true));
+          }
+        };
+
+        // Prefer webhook snapshot if present, otherwise summary/refunds
+        let usedTotal =
           webhookTotal != null
             ? Math.max(webhookTotal, refundedSum, summary.total || 0)
             : Math.max(refundedSum, summary.total || 0);
-        const remainingAfter = Math.max(0, txAmount - usedTotal);
-        tr.dataset.remaining = String(remainingAfter);
-
-        const statusLabel =
+        let statusLabel =
           webhookSnap?.status ||
           summary.status ||
           (usedTotal >= txAmount - 1e-2 ? "REFUNDED" : "PARTIALLY_REFUNDED");
-        const finalStatus = usedTotal < 1e-2 && statusLabel === "COMPLETED" ? "NOT_REFUNDED" : statusLabel;
+        let currencyLabel = webhookSnap?.currency || summary.currency || tx.currency;
 
-        refundCell.innerHTML = `
-          ${pill(finalStatus)}
-          <span class="pill">Refunded ${fmtMoney(
-            usedTotal,
-            webhookSnap?.currency || summary.currency || tx.currency
-          )}</span>
-        `;
-
-        if (remainingAfter <= 0) {
-          const input = tr.querySelector(`input[data-row="${rowId}"]`);
-          const buttons = tr.querySelectorAll(`button[data-row="${rowId}"]`);
-          if (input) input.disabled = true;
-          buttons.forEach((b) => (b.disabled = true));
+        // If still zero and no webhook total, try pulling latest webhook snapshot directly
+        if (usedTotal <= 1e-2 && webhookTotal == null) {
+          fetchWebhookRefund(captureId)
+            .then((snap) => {
+              if (snap && snap.total != null) {
+                const snapTotal = Math.abs(Number(snap.total));
+                const snapStatus = snap.status || statusLabel;
+                const snapCur = snap.currency || currencyLabel;
+                updateCell(Math.max(snapTotal, usedTotal), snapStatus, snapCur);
+              } else {
+                updateCell(usedTotal, statusLabel, currencyLabel);
+              }
+            })
+            .catch(() => updateCell(usedTotal, statusLabel, currencyLabel));
+        } else {
+          updateCell(usedTotal, statusLabel, currencyLabel);
         }
       })
       .catch((err) => {
