@@ -17,7 +17,7 @@ function pill(status) {
   const s = (status || "").toUpperCase();
   let cls = "pill";
   if (["COMPLETED", "CAPTURED", "REFUNDED"].includes(s)) cls += " ok";
-  else if (s === "PENDING") cls += " warn";
+  else if (s === "PENDING" || s === "PARTIALLY_REFUNDED") cls += " warn";
   else cls += " danger";
   return `<span class="${cls}">${s || "?"}</span>`;
 }
@@ -151,17 +151,6 @@ async function fetchRefundSummary(captureId, fallback = null) {
 
 async function fetchWebhookRefund(captureId) {
   if (!captureId) return null;
-  try {
-    const res = await fetch(`${SERVER_BASE}/api/admin/webhooks/refunds/${encodeURIComponent(captureId)}`);
-    const data = await res.json();
-    if (!res.ok || !data?.data) return null;
-    return data.data;
-  } catch {
-    return null;
-  }
-}
-
-async function fetchWebhookCapture(captureId) {
   if (!captureId) return null;
   try {
     const res = await fetch(`${SERVER_BASE}/api/admin/webhooks/captures/${encodeURIComponent(captureId)}`);
@@ -170,17 +159,6 @@ async function fetchWebhookCapture(captureId) {
     return data.data;
   } catch {
     return null;
-  }
-}
-
-async function fetchWebhookRefundsList() {
-  try {
-    const res = await fetch(`${SERVER_BASE}/api/admin/webhooks/refunds`);
-    const data = await res.json();
-    if (!res.ok || !Array.isArray(data?.data)) return [];
-    return data.data;
-  } catch {
-    return [];
   }
 }
 
@@ -301,9 +279,9 @@ async function loadTransactions() {
     const txAmount = Math.abs(Number(tx.amount) || 0);
     const reportedRefunds = refundMap[captureId] || refundMap[tx.orderID] || [];
     const refundedSum = reportedRefunds.reduce((s, r) => s + Math.abs(Number(r.amount || 0)), 0);
-    const remaining = Math.max(0, txAmount - refundedSum);
     const webhookSnap = webhookRefundMap[captureId];
     const webhookTotal = webhookSnap?.total != null ? Math.abs(Number(webhookSnap.total)) : null;
+    const remaining = Math.max(0, txAmount - (webhookTotal != null ? webhookTotal : refundedSum));
 
     tr.dataset.captureId = captureId;
     tr.dataset.remaining = String(remaining);
@@ -367,51 +345,31 @@ async function loadTransactions() {
         const refundCell = document.getElementById(`${rowId}-refund`);
         if (!refundCell) return;
 
-        // Prefer webhook (real-time) if present
-        fetchWebhookRefund(captureId)
-          .then((webhook) => {
-            const webhookTotalFetched = webhook?.total != null ? Math.abs(Number(webhook.total)) : null;
-            const webhookTotalEffective =
-              webhookTotalFetched != null ? webhookTotalFetched : webhookTotal != null ? webhookTotal : null;
-            const usedTotal = Math.max(
-              refundedSum,
-              webhookTotalEffective != null ? webhookTotalEffective : 0,
-              summary.total || 0,
-            );
-            const remainingAfter = Math.max(0, txAmount - usedTotal);
-            tr.dataset.remaining = String(remainingAfter);
+        // Decide refunded total: prefer webhook snapshot, else summary/refunds
+        const usedTotal =
+          webhookTotal != null
+            ? Math.max(webhookTotal, refundedSum, summary.total || 0)
+            : Math.max(refundedSum, summary.total || 0);
+        const remainingAfter = Math.max(0, txAmount - usedTotal);
+        tr.dataset.remaining = String(remainingAfter);
 
-            const statusLabel =
-              webhook?.status ||
-              webhookSnap?.status ||
-              summary.status ||
-              (usedTotal >= txAmount - 1e-2 ? "REFUNDED" : "PARTIALLY_REFUNDED");
+        const statusLabel =
+          webhookSnap?.status ||
+          summary.status ||
+          (usedTotal >= txAmount - 1e-2 ? "REFUNDED" : "PARTIALLY_REFUNDED");
+        const finalStatus = usedTotal < 1e-2 && statusLabel === "COMPLETED" ? "NOT_REFUNDED" : statusLabel;
 
-            const finalStatus =
-              usedTotal < 1e-2 && statusLabel === "COMPLETED" ? "NOT_REFUNDED" : statusLabel;
+        refundCell.innerHTML = `
+          ${pill(finalStatus)}
+          <span class="pill">Refunded ${fmtMoney(usedTotal, webhookSnap?.currency || summary.currency || tx.currency)}</span>
+        `;
 
-            refundCell.innerHTML = `
-              ${pill(finalStatus)}
-              <span class="pill">Refunded ${fmtMoney(usedTotal, webhook?.currency || webhookSnap?.currency || summary.currency)}</span>
-            `;
-
-            if (remainingAfter <= 0) {
-              const input = tr.querySelector(`input[data-row="${rowId}"]`);
-              const buttons = tr.querySelectorAll(`button[data-row="${rowId}"]`);
-              if (input) input.disabled = true;
-              buttons.forEach((b) => (b.disabled = true));
-            }
-          })
-          .catch(() => {
-            // Fallback: use summary only
-            const usedTotal = Math.max(refundedSum, summary.total || 0);
-            const remainingAfter = Math.max(0, txAmount - usedTotal);
-            tr.dataset.remaining = String(remainingAfter);
-            refundCell.innerHTML = `
-              ${pill(summary.status)}
-              <span class="pill">Refunded ${fmtMoney(usedTotal, summary.currency)}</span>
-            `;
-          });
+        if (remainingAfter <= 0) {
+          const input = tr.querySelector(`input[data-row="${rowId}"]`);
+          const buttons = tr.querySelectorAll(`button[data-row="${rowId}"]`);
+          if (input) input.disabled = true;
+          buttons.forEach((b) => (b.disabled = true));
+        }
       })
       .catch((err) => {
         const refundCell = document.getElementById(`${rowId}-refund`);

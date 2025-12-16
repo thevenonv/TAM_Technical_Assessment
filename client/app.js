@@ -1,31 +1,45 @@
 (() => {
-  // DOM lookups
-  const carouselEl = document.getElementById("carousel");
-  const selectedNameEl = document.getElementById("selectedName");
-  const itemTotalEl = document.getElementById("itemTotal");
-  const currencyLabelEl = document.getElementById("currencyLabel");
+  const SERVER_BASE =
+    window.SERVER_BASE ||
+    (window.location.hostname === "localhost"
+      ? "https://tam-technical-assessment.onrender.com"
+      : window.location.origin);
 
-  const buyerForm = document.getElementById("buyerForm");
-  const buyerStatus = document.getElementById("buyerStatus");
-  const paymentSection = document.getElementById("paymentSection");
+  const fmt = (amount) => `${CURRENCY} ${Number(amount).toFixed(2)}`;
+  const q = (id) => document.getElementById(id);
+  const setNotice = (el, type, msg) => {
+    if (!el) return;
+    el.className = `notice ${type || ""}`;
+    el.textContent = msg;
+    el.classList.remove("hidden");
+  };
+  const hide = (el) => el && el.classList.add("hidden");
 
-  const tabPayPal = document.getElementById("tabPayPal");
-  const tabCard = document.getElementById("tabCard");
-  const panelPayPal = document.getElementById("panelPayPal");
-  const panelCard = document.getElementById("panelCard");
-
-  const paypalStatus = document.getElementById("paypalStatus");
-  const globalStatus = document.getElementById("globalStatus");
-
-  const cardEligibility = document.getElementById("cardEligibility");
-  const cardStatus = document.getElementById("cardStatus");
-  const cardPayBtn = document.getElementById("cardPayBtn");
-  const editBuyerBtn = document.getElementById("editBuyerBtn");
-
-  // state
   let buyerInfo = null;
+  let selected = products[0];
 
-  // helpers
+  const carouselEl = q("carousel");
+  const selectedNameEl = q("selectedName");
+  const itemTotalEl = q("itemTotal");
+  const currencyLabelEl = q("currencyLabel");
+
+  const buyerForm = q("buyerForm");
+  const buyerStatus = q("buyerStatus");
+  const paymentSection = q("paymentSection");
+
+  const tabPayPal = q("tabPayPal");
+  const tabCard = q("tabCard");
+  const panelPayPal = q("panelPayPal");
+  const panelCard = q("panelCard");
+
+  const paypalStatus = q("paypalStatus");
+  const globalStatus = q("globalStatus");
+
+  const cardEligibility = q("cardEligibility");
+  const cardStatus = q("cardStatus");
+  const cardPayBtn = q("cardPayBtn");
+  const editBuyerBtn = q("editBuyerBtn");
+
   async function fetchJson(url, options) {
     const res = await fetch(url, options);
     const data = await res.json().catch(() => ({}));
@@ -36,17 +50,6 @@
       throw err;
     }
     return data;
-  }
-
-  const fmt = (amount) => `$${Number(amount).toFixed(2)}`;
-
-  function show(el) { el && el.classList.remove("hidden"); }
-  function hide(el) { el && el.classList.add("hidden"); }
-  function setNotice(el, type, msg) {
-    if (!el) return;
-    el.className = `notice ${type || ""}`;
-    el.textContent = msg;
-    show(el);
   }
 
   function setActiveTab(which) {
@@ -87,48 +90,36 @@
   }
 
   function readBuyerInfo() {
-    const fullName = document.getElementById("fullName")?.value.trim();
-    const email = document.getElementById("email")?.value.trim();
-    const addr1 = document.getElementById("addr1")?.value.trim();
-    const addr2 = document.getElementById("addr2")?.value.trim();
-    const city = document.getElementById("city")?.value.trim();
-    const state = document.getElementById("state")?.value.trim().toUpperCase();
-    const zip = document.getElementById("zip")?.value.trim();
-    const country = document.getElementById("country")?.value;
-
     return {
-      fullName,
-      email,
+      fullName: q("fullName")?.value.trim(),
+      email: q("email")?.value.trim(),
       address: {
-        address_line_1: addr1,
-        address_line_2: addr2 || undefined,
-        admin_area_2: city,
-        admin_area_1: state,
-        postal_code: zip,
-        country_code: country,
+        address_line_1: q("addr1")?.value.trim(),
+        address_line_2: q("addr2")?.value.trim() || undefined,
+        admin_area_2: q("city")?.value.trim(),
+        admin_area_1: q("state")?.value.trim().toUpperCase(),
+        postal_code: q("zip")?.value.trim(),
+        country_code: q("country")?.value,
       },
     };
   }
 
   function validateBuyerInfo(info) {
     const errs = [];
-    if (!info.fullName) errs.push("Full name is required.");
     const a = info.address || {};
+    if (!info.fullName) errs.push("Full name is required.");
     if (!a.address_line_1) errs.push("Address line 1 is required.");
     if (!a.admin_area_2) errs.push("City is required.");
     if (!a.admin_area_1 || a.admin_area_1.length !== 2) errs.push("State must be 2 letters.");
     if (!a.postal_code) errs.push("Postal code is required.");
     else if (!/^[0-9]{5}$/.test(a.postal_code)) errs.push("Postal code must be 5 digits.");
     if (!a.country_code) errs.push("Country is required.");
-    if (info.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(info.email)) {
-      errs.push("Email format is invalid.");
-    }
+    if (info.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(info.email)) errs.push("Email format is invalid.");
     return errs;
   }
 
   async function createOrderOnServer() {
     if (!buyerInfo) throw new Error("Buyer info missing. Please complete the form first.");
-
     const data = await fetchJson(`${SERVER_BASE}/api/orders`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -140,7 +131,6 @@
         buyerInfo,
       }),
     });
-
     return data.orderID;
   }
 
@@ -153,7 +143,6 @@
       `&name=${encodeURIComponent(selected.name)}`;
   }
 
-  // init UI
   renderProducts();
   updateSummary();
   setActiveTab("paypal");
@@ -167,44 +156,41 @@
     const errs = validateBuyerInfo(info);
     if (errs.length) {
       setNotice(buyerStatus, "danger", errs.join(" "));
-      hide(paymentSection);
+      paymentSection?.classList.add("hidden");
       buyerInfo = null;
       return;
     }
     buyerInfo = info;
     setNotice(buyerStatus, "success", "Buyer info saved. Choose a payment method below.");
-    show(paymentSection);
+    paymentSection?.classList.remove("hidden");
     paymentSection?.scrollIntoView({ behavior: "smooth", block: "start" });
     hide(globalStatus);
     hide(paypalStatus);
     hide(cardStatus);
   };
 
-  editBuyerBtn.onclick = () => {
-    document.getElementById("fullName")?.scrollIntoView({ behavior: "smooth", block: "center" });
-  };
+  editBuyerBtn.onclick = () => q("fullName")?.scrollIntoView({ behavior: "smooth", block: "center" });
 
-  // PAYPAL BUTTONS
-  paypal.Buttons({
-    createOrder: async () => {
-      hide(globalStatus);
-      setNotice(paypalStatus, "", "Creating order…");
-      const orderID = await createOrderOnServer();
-      setNotice(paypalStatus, "success", `Order created: ${orderID}`);
-      return orderID;
-    },
-    onApprove: (data) => goToReview(data.orderID),
-    onError: (err) => {
-      console.error(err);
-      setNotice(globalStatus, "danger", "PayPal error: " + (err?.message || String(err)));
-      alert("PayPal error: " + (err?.message || String(err)));
-    },
-  }).render("#paypal-button-container");
+  paypal
+    .Buttons({
+      createOrder: async () => {
+        hide(globalStatus);
+        setNotice(paypalStatus, "", "Creating order…");
+        const orderID = await createOrderOnServer();
+        setNotice(paypalStatus, "success", `Order created: ${orderID}`);
+        return orderID;
+      },
+      onApprove: (data) => goToReview(data.orderID),
+      onError: (err) => {
+        setNotice(globalStatus, "danger", "PayPal error: " + (err?.message || String(err)));
+        alert("PayPal error: " + (err?.message || String(err)));
+      },
+    })
+    .render("#paypal-button-container");
 
-  // CARD FIELDS
   try {
     if (!paypal.CardFields) {
-      setNotice(cardEligibility, "warn", "Card Fields not available. Check SDK has components=buttons,card-fields.");
+      setNotice(cardEligibility, "warn", "Card Fields not available. Check SDK includes components=buttons,card-fields.");
       cardPayBtn.disabled = true;
       return;
     }
@@ -217,10 +203,7 @@
         return orderID;
       },
       onApprove: (data) => goToReview(data.orderID),
-      onError: (err) => {
-        console.error(err);
-        setNotice(cardStatus, "danger", "Card error: " + (err?.message || String(err)));
-      },
+      onError: (err) => setNotice(cardStatus, "danger", "Card error: " + (err?.message || String(err))),
     });
 
     if (!cardFields.isEligible()) {
@@ -243,14 +226,12 @@
         cardPayBtn.textContent = "Processing…";
         await cardFields.submit();
       } catch (e) {
-        console.error(e);
         setNotice(cardStatus, "danger", e.message || "Card submit failed");
         cardPayBtn.disabled = false;
         cardPayBtn.textContent = "Pay with card";
       }
     };
   } catch (e) {
-    console.error(e);
     setNotice(cardEligibility, "warn", "Card Fields init failed. Check console.");
     cardPayBtn.disabled = true;
   }

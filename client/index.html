@@ -18,13 +18,13 @@
           <h1 style="margin-top:10px;">Select a product, enter buyer info, pay</h1>
           <p>Phase 2: the buyer fills their info <b>before</b> choosing <b>PayPal</b> or <b>Card</b>.</p>
         </div>
-            <div class="pill" style="display:flex; gap:10px;">
-                <span>PayPal JS SDK Buttons + Card Fields</span>
-                <a href="/backoffice.html" style="text-decoration:none;">
-                    <button class="btn secondary" type="button" style="margin:0;">Back-office</button>
-                </a>
-            </div>
+        <div class="pill" style="display:flex; gap:10px;">
+          <span>PayPal JS SDK Buttons + Card Fields</span>
+          <a href="/backoffice.html" style="text-decoration:none;">
+            <button class="btn secondary" type="button" style="margin:0;">Back-office</button>
+          </a>
         </div>
+      </div>
 
       <div class="grid">
         <!-- LEFT: Product carousel -->
@@ -189,7 +189,11 @@
     </div>
 
     <script>
-      const SERVER_BASE = "http://localhost:3001";
+      const SERVER_BASE =
+        window.SERVER_BASE ||
+        (window.location.hostname === "localhost"
+          ? "https://tam-technical-assessment.onrender.com"
+          : window.location.origin);
       const CURRENCY = "USD";
 
       const products = [
@@ -228,10 +232,7 @@
       let selected = products[0];
     </script>
 
-    <!-- (buttons + card-fields) -->
     <script src="https://www.paypal.com/sdk/js?client-id=ASbueoig2hEMWPriVDVgiBGKhULs18A7JSiH-C3rCz7otPKDA1wIBWM-q91MBhyei0a3hsORON91VV6q&currency=USD&intent=capture&components=buttons,card-fields"></script>
-
-    <!-- Phase 2 logic -->
     <script src="app.js"></script>
   </body>
 </html>

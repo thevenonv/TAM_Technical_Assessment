@@ -12,7 +12,7 @@
       <div class="topbar">
         <div>
           <h1>Review your order</h1>
-          <div class="sub">We retrieve your shipping address, compute shipping, PATCH the PayPal order, then capture.</div>
+          <div class="sub">Shipping is read from PayPal, then the order is patched and captured.</div>
         </div>
         <div class="pill">Sandbox Review</div>
       </div>
@@ -29,12 +29,10 @@
             <div class="row"><div class="label">Ship to</div><div class="value" id="shipToEl">-</div></div>
             <div class="row"><div class="label">Item total</div><div class="value" id="itemEl">-</div></div>
             <div class="row"><div class="label">Shipping</div><div class="value" id="shipEl">-</div></div>
-
             <div class="total">
               <div class="label">Final total</div>
               <div class="value" id="totalEl">-</div>
             </div>
-
             <div class="btns">
               <button id="confirmBtn" disabled>Confirm & Pay</button>
               <button class="secondary" id="backBtn">< Back</button>

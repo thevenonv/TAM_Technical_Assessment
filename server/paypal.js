@@ -1,71 +1,15 @@
-﻿import { Buffer } from "node:buffer";
+import "dotenv/config";
 
-// Load .env ONLY when running locally.
-// On Render, you must use Environment Variables in the dashboard.
-async function loadDotenvIfLocal() {
-  const isRender = !!process.env.RENDER;
-  const isProd = process.env.NODE_ENV === "production";
-
-  if (!isRender && !isProd) {
-    try {
-      const dotenv = await import("dotenv");
-      dotenv.config();
-    } catch {
-      // dotenv is optional; ignore if not installed
-    }
-  }
-}
-await loadDotenvIfLocal();
-
-// Support multiple env var names (helps if you named them differently in Render)
-function firstDefined(...values) {
-  for (const v of values) {
-    if (v != null && String(v).trim() !== "") return String(v).trim();
-  }
-  return undefined;
-}
-
-const PAYPAL_CLIENT_ID = firstDefined(
-  process.env.PAYPAL_CLIENT_ID,
-  process.env.PAYPAL_CLIENTID,
-  process.env.CLIENT_ID
-);
-
-const PAYPAL_SECRET = firstDefined(
-  process.env.PAYPAL_SECRET,
-  process.env.PAYPAL_CLIENT_SECRET,
-  process.env.PAYPAL_CLIENTSECRET,
-  process.env.CLIENT_SECRET
-);
-
-// Allow either PAYPAL_BASE_URL or PAYPAL_ENV=sandbox|live
-const PAYPAL_ENV = firstDefined(process.env.PAYPAL_ENV, process.env.PAYPAL_MODE) || "sandbox";
-const DEFAULT_BASE =
-  PAYPAL_ENV === "live" ? "https://api-m.paypal.com" : "https://api-m.sandbox.paypal.com";
-
-const PAYPAL_BASE_URL = firstDefined(process.env.PAYPAL_BASE_URL, process.env.PAYPAL_API_BASE) || DEFAULT_BASE;
-
-// Helpful debug (does NOT print secrets)
-const where = process.env.RENDER ? "Render" : "local";
-console.log(`[PayPal] env source=${where} base=${PAYPAL_BASE_URL}`);
-console.log(`[PayPal] clientId? ${!!PAYPAL_CLIENT_ID}  secret? ${!!PAYPAL_SECRET}`);
+const PAYPAL_CLIENT_ID = process.env.PAYPAL_CLIENT_ID;
+const PAYPAL_SECRET = process.env.PAYPAL_SECRET;
+const PAYPAL_ENV = process.env.PAYPAL_ENV || process.env.PAYPAL_MODE || "sandbox";
+const PAYPAL_BASE_URL =
+  process.env.PAYPAL_BASE_URL ||
+  process.env.PAYPAL_API_BASE ||
+  (PAYPAL_ENV === "live" ? "https://api-m.paypal.com" : "https://api-m.sandbox.paypal.com");
 
 if (!PAYPAL_CLIENT_ID || !PAYPAL_SECRET) {
-  throw new Error(
-    [
-      "Missing PayPal credentials in environment variables.",
-      "",
-      "Expected (Render → Service → Environment):",
-      "- PAYPAL_CLIENT_ID",
-      "- PAYPAL_SECRET",
-      "",
-      "Optional:",
-      "- PAYPAL_ENV = sandbox|live",
-      "- PAYPAL_BASE_URL (overrides default)",
-      "",
-      "Tip: make sure you added them to the SAME Render service and redeployed.",
-    ].join("\n")
-  );
+  throw new Error("Missing PAYPAL_CLIENT_ID or PAYPAL_SECRET");
 }
 
 function basicAuth() {
@@ -74,9 +18,7 @@ function basicAuth() {
 }
 
 export async function getAccessToken() {
-  const url = `${PAYPAL_BASE_URL}/v1/oauth2/token`;
-
-  const res = await fetch(url, {
+  const res = await fetch(`${PAYPAL_BASE_URL}/v1/oauth2/token`, {
     method: "POST",
     headers: {
       Authorization: `Basic ${basicAuth()}`,
@@ -94,14 +36,11 @@ export async function getAccessToken() {
     err.data = data;
     throw err;
   }
-
   return data.access_token;
 }
 
 async function paypalFetch(path, { method = "GET", token, body } = {}) {
-  const url = `${PAYPAL_BASE_URL}${path}`;
-
-  const res = await fetch(url, {
+  const res = await fetch(`${PAYPAL_BASE_URL}${path}`, {
     method,
     headers: {
       Authorization: `Bearer ${token}`,
@@ -120,14 +59,11 @@ async function paypalFetch(path, { method = "GET", token, body } = {}) {
     err.data = data;
     throw err;
   }
-
   return { data, debugId };
 }
 
-// Normalize optional buyer info to the format expected by PayPal
 function normalizeBuyerInfo(buyerInfo) {
   if (!buyerInfo || typeof buyerInfo !== "object") return null;
-
   const fullName = String(buyerInfo.fullName || "").trim();
   const email = String(buyerInfo.email || "").trim();
 
@@ -188,7 +124,6 @@ export async function createOrder({ currency = "USD", amount = "10.00", buyerInf
       address: norm.shippingAddress,
     };
   }
-
   if (norm?.email) {
     body.payer = { email_address: norm.email };
   }
@@ -203,7 +138,6 @@ export async function getOrder(orderID) {
 
 export async function updateOrderShipping({ orderID, currency = "USD", itemTotal, shippingValue }) {
   const token = await getAccessToken();
-
   const total = (Number(itemTotal) + Number(shippingValue)).toFixed(2);
 
   const patchBody = [
@@ -235,7 +169,6 @@ export async function captureOrder(orderID) {
 
 export async function refundCapture({ captureId, currency = "USD", amount } = {}) {
   const token = await getAccessToken();
-
   const body =
     amount != null
       ? { amount: { currency_code: currency, value: Number(amount).toFixed(2) } }
