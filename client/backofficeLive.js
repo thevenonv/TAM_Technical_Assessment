@@ -29,25 +29,6 @@ async function fetchJson(url, options) {
   return data;
 }
 
-async function fetchRefundsByIds(refundIds = []) {
-  const results = [];
-  for (const id of refundIds) {
-    try {
-      const data = await fetchJson(`${SERVER_BASE}/api/admin/refunds/${encodeURIComponent(id)}`);
-      if (data?.refund?.amount?.value) {
-        results.push({
-          amount: Number(data.refund.amount.value),
-          currency: data.refund.amount.currency_code || "USD",
-          status: data.refund.status,
-        });
-      }
-    } catch (e) {
-      console.warn("Refund detail fetch failed", id, e);
-    }
-  }
-  return results;
-}
-
 function renderRow(entry) {
   const tr = document.createElement("tr");
   const captureId = entry.captureId || "";
@@ -55,7 +36,6 @@ function renderRow(entry) {
   const localStatus = entry.captureStatus || entry.status || "PENDING";
 
   const refunds = Array.isArray(entry.refunds) ? entry.refunds : [];
-  const refundIds = refunds.map((r) => r.refundId).filter(Boolean);
   const captureAmt = Number(entry.captureAmount ?? entry.amount);
   const refundedSum = refunds.reduce((s, r) => s + Math.abs(Number(r.amount || 0)), 0);
   const fullyRefunded =
@@ -86,7 +66,6 @@ function renderRow(entry) {
   tr.dataset.ppStatus = "";
   tr.dataset.ppRefundTotal = "";
   tr.dataset.refundedSum = refundedSum;
-  tr.dataset.refundIds = refundIds.join(",");
   tr.dataset.remaining =
     Number.isFinite(captureAmt) && !fullyRefunded ? Math.max(0, Math.abs(captureAmt) - refundedSum) : 0;
   tr.innerHTML = `
@@ -174,37 +153,33 @@ async function checkPayPal(captureId, cellId) {
     const cur = data.capture?.amount?.currency_code || "USD";
     const msg = `${status} ${amt ? money(amt, cur) : ""}`.trim();
 
-    // Compute total refunds from PayPal API for comparison (capture refunds + per-refund fallback)
-    let ppRefundTotal = null;
+    // Compute total refunds strictly from PayPal APIs
+    let ppRefundTotal = 0;
     if (refundResp) {
       const refunds = refundResp.refunds?.refunds || refundResp.refunds?.items || refundResp.refunds || [];
       ppRefundTotal = refunds.reduce((s, r) => s + Math.abs(Number(r.amount?.value || 0)), 0);
-    }
-    // Fallback: query each local refundId if capture-level API returns nothing
-    let refundDetailsTotal = 0;
-    const row = document.querySelector(`tr[data-capture="${captureId}"]`);
-    const refundIds = row?.dataset?.refundIds ? row.dataset.refundIds.split(",").filter(Boolean) : [];
-    if ((!ppRefundTotal || ppRefundTotal === 0) && refundIds.length) {
-      const details = await fetchRefundsByIds(refundIds);
-      refundDetailsTotal = details.reduce((s, r) => s + Math.abs(Number(r.amount || 0)), 0);
+      // If PayPal marks REFUNDED but list is empty, assume full capture amount
+      if ((!refunds || !refunds.length) && status === "REFUNDED" && Number.isFinite(Number(amt))) {
+        ppRefundTotal = Math.abs(Number(amt));
+      }
     }
 
+    const row = document.querySelector(`tr[data-capture="${captureId}"]`);
     const localRefunded = row ? Number(row.dataset.refundedSum || 0) : 0;
-    const effectivePPRefund = ppRefundTotal != null && ppRefundTotal > 0 ? ppRefundTotal : refundDetailsTotal || 0;
     if (row) {
-      row.dataset.ppRefundTotal = String(effectivePPRefund || "");
+      row.dataset.ppRefundTotal = String(ppRefundTotal || "");
       row.dataset.ppStatus = status;
     }
 
     if (cell) {
       const mismatch =
-        Number.isFinite(localRefunded) && Math.abs(effectivePPRefund - localRefunded) > 0.01;
+        Number.isFinite(localRefunded) && Math.abs(ppRefundTotal - localRefunded) > 0.01;
       const statusClass =
         (status === "REFUNDED" || status === "COMPLETED" || status === "CAPTURED") && !mismatch ? "ok" : "warn";
       const statusPill = pill(msg, statusClass);
       let refundLabel;
-      if (effectivePPRefund || effectivePPRefund === 0) {
-        refundLabel = `PP refunds ${money(effectivePPRefund, cur)}${
+      if (ppRefundTotal || ppRefundTotal === 0) {
+        refundLabel = `PP refunds ${money(ppRefundTotal, cur)}${
           mismatch ? ` (local ${money(localRefunded, cur)})` : ""
         }`;
       } else {
@@ -307,17 +282,25 @@ function updatePendingFromDom() {
       const orderID = tr.dataset.order || "";
       const captureId = tr.dataset.capture || "";
       const refunded = Number(tr.dataset.refundedSum || 0);
-      const ppRefundTotal = tr.dataset.ppRefundTotal ? Number(tr.dataset.ppRefundTotal) : null;
+      const ppRefundTotalRaw = tr.dataset.ppRefundTotal;
+      const ppRefundTotal = ppRefundTotalRaw === "" || ppRefundTotalRaw == null ? null : Number(ppRefundTotalRaw);
       const ppStatus = (tr.dataset.ppStatus || "").toUpperCase();
       const localStatus = (tr.dataset.status || "").toUpperCase();
       const captureAmt = Number(tr.dataset.remaining || 0) + refunded;
 
       const fullyRefundedLocal = Number.isFinite(captureAmt) && refunded >= Math.abs(captureAmt) - 1e-2;
-      const ppMismatch =
-        ppRefundTotal == null || (Number.isFinite(refunded) && refunded > (ppRefundTotal || 0) + 1e-2);
-      const ppNotRefunded = ppStatus !== "REFUNDED";
+      const ppKnownRefund = ppStatus === "REFUNDED" || ppStatus === "PARTIALLY_REFUNDED";
+      const ppLessThanLocal =
+        ppRefundTotal != null && Number.isFinite(ppRefundTotal) && refunded > ppRefundTotal + 1e-2;
+      const ppMissing = ppRefundTotal == null || Number.isNaN(ppRefundTotal);
 
-      const shouldPending = refunded > 0 && (ppMismatch || ppNotRefunded || !fullyRefundedLocal);
+      // Pending if we have local refunds and either PayPal hasn't caught up, or reports less than local
+      const shouldPending =
+        refunded > 0 &&
+        ((!ppKnownRefund && (ppMissing || ppLessThanLocal)) ||
+          (ppKnownRefund && ppLessThanLocal) ||
+          (!fullyRefundedLocal && ppMissing));
+
       return shouldPending
         ? { orderID, captureId, refunded, status: ppStatus || localStatus || "PENDING" }
         : null;

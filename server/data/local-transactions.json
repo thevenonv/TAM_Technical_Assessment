@@ -63,12 +63,47 @@
       "name": "Running Sneakers"
     },
     "createdAt": "2025-12-15T15:44:19.234Z",
-    "updatedAt": "2025-12-15T17:11:50.948Z",
+    "updatedAt": "2025-12-16T00:12:40.543Z",
     "captureId": "1SU34715JU680424G",
     "captureStatus": "COMPLETED",
     "captureAmount": 61.49,
     "capturedAt": "2025-12-15T15:44:32.510Z",
     "refunds": [
+      {
+        "refundId": "1EX9090166242602P",
+        "amount": 3,
+        "currency": "USD",
+        "status": "COMPLETED",
+        "createdAt": "2025-12-16T00:12:40.543Z"
+      },
+      {
+        "refundId": "64S35194A91050316",
+        "amount": 2,
+        "currency": "USD",
+        "status": "COMPLETED",
+        "createdAt": "2025-12-15T20:01:07.378Z"
+      },
+      {
+        "refundId": "7S629892US313873S",
+        "amount": 3,
+        "currency": "USD",
+        "status": "COMPLETED",
+        "createdAt": "2025-12-15T17:30:06.873Z"
+      },
+      {
+        "refundId": "58F44195WK015180R",
+        "amount": 1,
+        "currency": "USD",
+        "status": "COMPLETED",
+        "createdAt": "2025-12-15T17:26:52.236Z"
+      },
+      {
+        "refundId": "0EX16616A3661734C",
+        "amount": 2,
+        "currency": "USD",
+        "status": "COMPLETED",
+        "createdAt": "2025-12-15T17:21:00.957Z"
+      },
       {
         "refundId": "68385392SX6700743",
         "amount": 6,
@@ -119,5 +154,90 @@
     ],
     "createdAt": "2025-12-15T15:47:14.497Z",
     "updatedAt": "2025-12-15T15:58:58.726Z"
+  },
+  {
+    "captureId": "85D246292C3268155",
+    "refunds": [
+      {
+        "refundId": "2J043618Y6167745M",
+        "amount": 10,
+        "currency": "USD",
+        "status": "COMPLETED",
+        "createdAt": "2025-12-15T18:52:01.557Z"
+      },
+      {
+        "refundId": "19D16590CK726800U",
+        "amount": 1.89,
+        "currency": "USD",
+        "status": "COMPLETED",
+        "createdAt": "2025-12-15T17:15:28.442Z"
+      }
+    ],
+    "createdAt": "2025-12-15T17:15:28.442Z",
+    "updatedAt": "2025-12-15T18:52:01.557Z"
+  },
+  {
+    "orderID": "2NK26846W2023892K",
+    "amount": 12,
+    "currency": "USD",
+    "product": {
+      "sku": "bottle",
+      "name": "Steel Water Bottle"
+    },
+    "createdAt": "2025-12-15T18:44:33.381Z",
+    "updatedAt": "2025-12-15T18:44:52.560Z",
+    "captureId": "17P64266GK2060056",
+    "captureStatus": "COMPLETED",
+    "captureAmount": 23.99,
+    "capturedAt": "2025-12-15T18:44:52.560Z"
+  },
+  {
+    "captureId": "69N718118A431292G",
+    "refunds": [
+      {
+        "refundId": "42D20106HG905894H",
+        "amount": 23.99,
+        "currency": "USD",
+        "status": "COMPLETED",
+        "createdAt": "2025-12-15T19:18:33.139Z"
+      },
+      {
+        "refundId": "8CB71419066681716",
+        "amount": 10,
+        "currency": "USD",
+        "status": "COMPLETED",
+        "createdAt": "2025-12-15T18:45:23.847Z"
+      }
+    ],
+    "createdAt": "2025-12-15T18:45:23.847Z",
+    "updatedAt": "2025-12-15T19:18:33.139Z"
+  },
+  {
+    "captureId": "01X5014339764721V",
+    "refunds": [
+      {
+        "refundId": "4BV39359MR6888030",
+        "amount": 2,
+        "currency": "USD",
+        "status": "COMPLETED",
+        "createdAt": "2025-12-15T19:19:18.919Z"
+      },
+      {
+        "refundId": "31R5818849415603G",
+        "amount": 2.1,
+        "currency": "USD",
+        "status": "COMPLETED",
+        "createdAt": "2025-12-15T19:15:56.041Z"
+      },
+      {
+        "refundId": "2XU37202D8986612Y",
+        "amount": 14.6,
+        "currency": "USD",
+        "status": "COMPLETED",
+        "createdAt": "2025-12-15T18:53:46.016Z"
+      }
+    ],
+    "createdAt": "2025-12-15T18:53:46.016Z",
+    "updatedAt": "2025-12-15T19:19:18.919Z"
   }
 ]
