@@ -470,6 +470,7 @@ app.post(
       captureId
     ) {
       let refundsTotal = null;
+      const refundId = resource?.id || resource?.refund_id || null;
 
       try {
         const refundsData = await fetchCaptureRefunds(captureId);
@@ -480,26 +481,42 @@ app.post(
           [];
 
         refundsTotal = refunds.reduce((s, r) => s + Math.abs(Number(r.amount?.value || 0)), 0);
+        // If PayPal returns no refund list yet, try webhook payload, then refund detail.
+        if (refundsTotal == null || refundsTotal <= 0) {
+          if (amount != null) {
+            refundsTotal = Math.abs(Number(amount));
+          } else if (refundId) {
+            try {
+              const { data: refundDetail } = await getRefund(refundId);
+              const val = refundDetail?.amount?.value;
+              if (val != null) refundsTotal = Math.abs(Number(val));
+            } catch (detailErr) {
+              console.warn("[WEBHOOK] getRefund fallback failed", detailErr?.message || detailErr);
+            }
+          }
+        }
 
         webhookRefunds.set(captureId, {
           captureId,
           total: refundsTotal,
           currency: refundsData.captureCurrency || currency,
           status: refundsData.captureStatus || status,
+          refundId: refundId || null,
           updatedAt: now,
         });
 
         console.log("[WEBHOOK] stored refund snapshot", captureId, "total=", refundsTotal);
-    } catch (e) {
-      console.warn("[WEBHOOK] fetchCaptureRefunds failed; storing minimal refund info", e?.message || e);
-      webhookRefunds.set(captureId, {
-        captureId,
-        total: amount ? Math.abs(Number(amount)) : null,
-        currency,
-        status,
-        updatedAt: now,
-      });
-    }
+      } catch (e) {
+        console.warn("[WEBHOOK] fetchCaptureRefunds failed; storing minimal refund info", e?.message || e);
+        webhookRefunds.set(captureId, {
+          captureId,
+          total: amount ? Math.abs(Number(amount)) : null,
+          currency,
+          status,
+          refundId: refundId || null,
+          updatedAt: now,
+        });
+      }
 
       return res.sendStatus(200);
     }
