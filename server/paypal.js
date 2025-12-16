@@ -260,6 +260,33 @@ export async function getCaptureDetails(captureId) {
   return paypalFetch(`/v2/payments/captures/${captureId}`, { method: "GET", token });
 }
 
+export async function verifyWebhookSignature({
+  authAlgo,
+  certUrl,
+  transmissionId,
+  transmissionSig,
+  transmissionTime,
+  webhookId,
+  body,
+}) {
+  const token = await getAccessToken();
+  const payload = {
+    auth_algo: authAlgo,
+    cert_url: certUrl,
+    transmission_id: transmissionId,
+    transmission_sig: transmissionSig,
+    transmission_time: transmissionTime,
+    webhook_id: webhookId,
+    webhook_event: body,
+  };
+
+  return paypalFetch("/v1/notifications/verify-webhook-signature", {
+    method: "POST",
+    token,
+    body: payload,
+  });
+}
+
 function toReportingISO(date) {
   const d = date instanceof Date ? date : new Date(date);
   return d.toISOString().replace(/\.\d{3}Z$/, "Z");

@@ -1,4 +1,5 @@
-const SERVER_BASE = "http://localhost:3001";
+// Use same origin by default; allow override via global if needed.
+const SERVER_BASE = window.SERVER_BASE || window.location.origin;
 
 const tbody = document.getElementById("tbody");
 const refreshBtn = document.getElementById("refreshBtn");
@@ -143,20 +144,66 @@ async function fetchRefundSummary(captureId, fallback = null) {
   };
 }
 
+async function fetchWebhookRefund(captureId) {
+  if (!captureId) return null;
+  try {
+    const res = await fetch(`${SERVER_BASE}/api/admin/webhooks/refunds/${encodeURIComponent(captureId)}`);
+    const data = await res.json();
+    if (!res.ok || !data?.data) return null;
+    return data.data;
+  } catch {
+    return null;
+  }
+}
+
+async function fetchWebhookCapture(captureId) {
+  if (!captureId) return null;
+  try {
+    const res = await fetch(`${SERVER_BASE}/api/admin/webhooks/captures/${encodeURIComponent(captureId)}`);
+    const data = await res.json();
+    if (!res.ok || !data?.data) return null;
+    return data.data;
+  } catch {
+    return null;
+  }
+}
+
 async function loadTransactions() {
   tbody.innerHTML = `<tr><td colspan="6">Loading...</td></tr>`;
 
   let data;
+  let webhookCaptures = [];
   try {
-    const res = await fetch(`${SERVER_BASE}/api/admin/transactions?pageSize=1000`);
-    data = await res.json();
-    if (!res.ok) throw new Error(data.error || "Failed to load transactions");
+    const [resTx, resWebhookCaps] = await Promise.all([
+      fetch(`${SERVER_BASE}/api/admin/transactions?pageSize=1000`),
+      fetch(`${SERVER_BASE}/api/admin/webhooks/captures`).catch(() => null),
+    ]);
+    data = await resTx.json();
+    if (!resTx.ok) throw new Error(data.error || "Failed to load transactions");
+    if (resWebhookCaps && resWebhookCaps.ok) {
+      const w = await resWebhookCaps.json();
+      webhookCaptures = Array.isArray(w.data) ? w.data : [];
+    }
   } catch (err) {
     tbody.innerHTML = `<tr><td colspan="7" style="color:#fca5a5;">${err.message}</td></tr>`;
     return;
   }
 
   const txs = data.transactions || [];
+  // Merge in captures seen via webhook but not yet in reporting
+  webhookCaptures.forEach((cap) => {
+    const already = txs.some((t) => t.captureId === cap.captureId);
+    if (!already && cap.captureId) {
+      txs.push({
+        orderID: cap.orderID || null,
+        captureId: cap.captureId,
+        status: cap.status || "COMPLETED",
+        amount: cap.amount != null ? String(cap.amount) : null,
+        currency: cap.currency || "USD",
+        createTime: cap.createdAt || cap.updatedAt || null,
+      });
+    }
+  });
 
   // Build map of refunds from reporting (negative amounts)
   const refundMap = {};
@@ -212,8 +259,8 @@ async function loadTransactions() {
 
     tr.innerHTML = `
       <td><code>${tx.orderID || "-"}</code></td>
-      <td><code>${captureId || "-"}</code></td>
-      <td>${fmtTime(tx.createTime)}</td>
+      <td><code id="${rowId}-capture">${captureId || "-"}</code></td>
+      <td id="${rowId}-date">${fmtTime(tx.createTime)}</td>
       <td>${fmtMoney(tx.amount, tx.currency)}</td>
       <td id="${rowId}-refund">Loading...</td>
       <td>
@@ -239,32 +286,67 @@ async function loadTransactions() {
       return;
     }
 
+    // Prefer real-time capture info from webhook if present
+    fetchWebhookCapture(captureId)
+      .then((cap) => {
+        if (!cap) return;
+        const dateCell = document.getElementById(`${rowId}-date`);
+        if (dateCell && cap.createdAt) dateCell.textContent = fmtTime(cap.createdAt);
+        const capCell = document.getElementById(`${rowId}-capture`);
+        if (capCell && cap.captureId) capCell.innerHTML = `<code>${cap.captureId}</code>`;
+      })
+      .catch(() => {});
+
     const fallback = {
       refundedSum,
       currency: reportedRefunds[0]?.currency || tx.currency || "USD",
       time: reportedRefunds[0]?.time || null,
     };
 
-    fetchRefundSummary(captureId, fallback)
-      .then((summary) => {
+      fetchRefundSummary(captureId, fallback)
+        .then((summary) => {
         const refundCell = document.getElementById(`${rowId}-refund`);
         if (!refundCell) return;
 
-        const usedTotal = Math.max(refundedSum, summary.total || 0);
-        const remainingAfter = Math.max(0, txAmount - usedTotal);
-        tr.dataset.remaining = String(remainingAfter);
+        // Prefer webhook (real-time) if present
+        fetchWebhookRefund(captureId)
+          .then((webhook) => {
+            const webhookTotal = webhook?.total != null ? Math.abs(Number(webhook.total)) : null;
+            const usedTotal = Math.max(
+              refundedSum,
+              webhookTotal != null ? webhookTotal : 0,
+              summary.total || 0,
+            );
+            const remainingAfter = Math.max(0, txAmount - usedTotal);
+            tr.dataset.remaining = String(remainingAfter);
 
-        refundCell.innerHTML = `
-          ${pill(summary.status)}
-          <span class="pill">Refunded ${fmtMoney(usedTotal, summary.currency)}</span>
-        `;
+            const statusLabel =
+              webhook?.status ||
+              summary.status ||
+              (usedTotal >= txAmount - 1e-2 ? "REFUNDED" : "PARTIALLY_REFUNDED");
 
-        if (remainingAfter <= 0) {
-          const input = tr.querySelector(`input[data-row="${rowId}"]`);
-          const buttons = tr.querySelectorAll(`button[data-row="${rowId}"]`);
-          if (input) input.disabled = true;
-          buttons.forEach((b) => (b.disabled = true));
-        }
+            refundCell.innerHTML = `
+              ${pill(statusLabel)}
+              <span class="pill">Refunded ${fmtMoney(usedTotal, webhook?.currency || summary.currency)}</span>
+            `;
+
+            if (remainingAfter <= 0) {
+              const input = tr.querySelector(`input[data-row="${rowId}"]`);
+              const buttons = tr.querySelectorAll(`button[data-row="${rowId}"]`);
+              if (input) input.disabled = true;
+              buttons.forEach((b) => (b.disabled = true));
+            }
+          })
+          .catch(() => {
+            // Fallback: use summary only
+            const usedTotal = Math.max(refundedSum, summary.total || 0);
+            const remainingAfter = Math.max(0, txAmount - usedTotal);
+            tr.dataset.remaining = String(remainingAfter);
+            refundCell.innerHTML = `
+              ${pill(summary.status)}
+              <span class="pill">Refunded ${fmtMoney(usedTotal, summary.currency)}</span>
+            `;
+          });
       })
       .catch((err) => {
         const refundCell = document.getElementById(`${rowId}-refund`);

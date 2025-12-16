@@ -8,6 +8,7 @@ import {
   getAccessToken,
   getCaptureDetails,
   getRefund,
+  verifyWebhookSignature,
   createOrder,
   getOrder,
   updateOrderShipping,
@@ -15,11 +16,13 @@ import {
   refundCapture,
   listTransactions,
 } from "./paypal.js";
-import { recordOrder, recordCapture, recordRefund, listEntries } from "./store.js";
+
+// In-memory webhook snapshots (kept simple; reset on restart)
+const webhookRefunds = new Map(); // captureId -> { total, currency, status, updatedAt }
+const webhookCaptures = new Map(); // captureId -> { captureId, orderID, status, amount, currency, createdAt, updatedAt }
 
 const app = express();
 app.use(cors());
-app.use(express.json());
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -48,6 +51,13 @@ const asyncHandler = (fn) => (req, res, next) =>
 
 const CLIENT_DIR = path.join(__dirname, "../client");
 app.use(express.static(CLIENT_DIR));
+// Raw body needed for webhook signature verification
+app.use(
+  "/api/webhooks/paypal",
+  express.raw({ type: "application/json" }),
+);
+// JSON parser for all other routes
+app.use(express.json());
 
 app.get("/", (req, res) => {
   res.sendFile(path.join(CLIENT_DIR, "index.html"));
@@ -94,65 +104,54 @@ app.get(
   }),
 );
 
+// Helper: fetch refunds for a capture (used by API + webhook)
+async function fetchCaptureRefunds(captureId) {
+  const { data: cap, debugId } = await getCaptureDetails(captureId);
+  const captureStatus = cap?.status || null;
+  const captureAmount = cap?.amount?.value || null;
+  const captureCurrency = cap?.amount?.currency_code || null;
+  const refundLink = (cap.links || []).find((l) => l.rel === "refund")?.href;
+
+  if (!refundLink) {
+    return { refunds: [], captureStatus, captureAmount, captureCurrency, debugId };
+  }
+
+  const token = await getAccessToken();
+  const r = await fetch(refundLink, {
+    method: "GET",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+  });
+
+  const refundsData = await r.json().catch(() => ({}));
+  const refundsDebugId = r.headers.get("paypal-debug-id");
+
+  if (!r.ok) {
+    if (r.status === 404 || r.status === 400 || r.status === 422) {
+      return { refunds: [], captureStatus, captureAmount, captureCurrency, debugId: refundsDebugId || debugId };
+    }
+    const err = new Error("Failed to fetch refunds from PayPal");
+    err.status = r.status;
+    err.debugId = refundsDebugId;
+    err.data = refundsData;
+    throw err;
+  }
+
+  return {
+    refunds: refundsData,
+    captureStatus,
+    captureAmount,
+    captureCurrency,
+    debugId: refundsDebugId || debugId,
+  };
+}
+
 app.get(
   "/api/admin/captures/:captureId/refunds",
   asyncHandler(async (req, res) => {
     const { captureId } = req.params;
 
-    const { data: cap, debugId } = await getCaptureDetails(captureId);
-    const captureStatus = cap?.status || null;
-    const captureAmount = cap?.amount?.value || null;
-    const captureCurrency = cap?.amount?.currency_code || null;
-
-    const refundLink = (cap.links || []).find((l) => l.rel === "refund")?.href;
-
-    if (!refundLink) {
-      return res.json({
-        ok: true,
-        debugId,
-        refunds: [],
-        captureStatus,
-        captureAmount,
-        captureCurrency,
-      });
-    }
-
-    const token = await getAccessToken();
-    const r = await fetch(refundLink, {
-      method: "GET",
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-    });
-
-    const refundsData = await r.json().catch(() => ({}));
-    const refundsDebugId = r.headers.get("paypal-debug-id");
-
-    if (!r.ok) {
-      if (r.status === 404 || r.status === 400 || r.status === 422) {
-        return res.json({
-          ok: true,
-          debugId: refundsDebugId || debugId,
-          refunds: [],
-          captureStatus,
-          captureAmount,
-          captureCurrency,
-        });
-      }
-
-      return res.status(r.status).json({
-        error: "Failed to fetch refunds from PayPal",
-        debugId: refundsDebugId,
-        details: refundsData,
-      });
-    }
-
-    res.json({
-      ok: true,
-      debugId: refundsDebugId || debugId,
-      refunds: refundsData,
-      captureStatus,
-      captureAmount,
-      captureCurrency,
-    });
+    const data = await fetchCaptureRefunds(captureId);
+    res.json({ ok: true, ...data });
   }),
 );
 
@@ -180,12 +179,6 @@ app.post(
     const { currency = "USD", amount = "10.00", sku, name, buyerInfo } = req.body || {};
 
     const { data, debugId } = await createOrder({ currency, amount, buyerInfo });
-    recordOrder({
-      orderID: data.id,
-      amount,
-      currency,
-      product: { sku, name },
-    }).catch((e) => console.warn("[store] recordOrder failed", e));
 
     res.status(201).json({
       orderID: data.id,
@@ -248,15 +241,6 @@ app.post(
 
     const pu = data.purchase_units?.[0];
     const capture = pu?.payments?.captures?.[0];
-    if (capture?.id) {
-      recordCapture({
-        orderID,
-        captureId: capture.id,
-        captureStatus: capture.status,
-        captureAmount: capture.amount?.value,
-        currency: capture.amount?.currency_code,
-      }).catch((e) => console.warn("[store] recordCapture failed", e));
-    }
 
     res.json({
       ok: true,
@@ -344,11 +328,128 @@ app.post(
   }),
 );
 
+// Webhook receiver (PayPal)
+app.post(
+  "/api/webhooks/paypal",
+  asyncHandler(async (req, res) => {
+    const webhookId = process.env.PAYPAL_WEBHOOK_ID;
+    if (!webhookId) {
+      return res.status(500).json({ error: "PAYPAL_WEBHOOK_ID is not configured" });
+    }
+
+    const headers = req.headers;
+    const rawBody = req.body; // Buffer
+    const bodyString = rawBody instanceof Buffer ? rawBody.toString("utf8") : "";
+    const body = JSON.parse(bodyString || "{}");
+
+    // Verify signature
+    const { data: verification } = await verifyWebhookSignature({
+      authAlgo: headers["paypal-auth-algo"],
+      certUrl: headers["paypal-cert-url"],
+      transmissionId: headers["paypal-transmission-id"],
+      transmissionSig: headers["paypal-transmission-sig"],
+      transmissionTime: headers["paypal-transmission-time"],
+      webhookId,
+      body,
+    });
+
+    if (verification.verification_status !== "SUCCESS") {
+      const err = new Error("Invalid webhook signature");
+      err.status = 400;
+      throw err;
+    }
+
+    const eventType = body.event_type;
+    const resource = body.resource || {};
+    const captureId = resource.id || resource.capture_id || resource?.supplementary_data?.related_ids?.capture_id;
+    const status = (resource.status || "").toUpperCase();
+    const amount =
+      resource.amount?.value ??
+      resource.seller_receivable_breakdown?.gross_amount?.value ??
+      null;
+    const currency =
+      resource.amount?.currency_code ??
+      resource.seller_receivable_breakdown?.gross_amount?.currency_code ??
+      "USD";
+
+    const now = new Date().toISOString();
+
+    // Capture created/completed events (for real-time availability in backoffice)
+    const isCaptureEvent =
+      eventType === "PAYMENT.CAPTURE.COMPLETED" || eventType === "PAYMENT.CAPTURE.DENIED";
+    if (isCaptureEvent && captureId) {
+      webhookCaptures.set(captureId, {
+        captureId,
+        orderID: resource?.supplementary_data?.related_ids?.order_id || null,
+        status,
+        amount: amount != null ? Math.abs(Number(amount)) : null,
+        currency,
+        createdAt: resource.create_time || now,
+        updatedAt: now,
+      });
+      return res.json({ ok: true });
+    }
+
+    // Capture refund events
+    const isRefundEvent =
+      eventType === "PAYMENT.CAPTURE.REFUNDED" || eventType === "PAYMENT.CAPTURE.PARTIALLY_REFUNDED";
+    if (isRefundEvent && captureId) {
+      // Try to fetch precise refund list from PayPal
+      let refundsTotal = null;
+      try {
+        const refundsData = await fetchCaptureRefunds(captureId);
+        const refunds = refundsData.refunds?.refunds || refundsData.refunds?.items || refundsData.refunds || [];
+        refundsTotal = refunds.reduce((s, r) => s + Math.abs(Number(r.amount?.value || 0)), 0);
+        webhookRefunds.set(captureId, {
+          captureId,
+          total: refundsTotal,
+          currency: refundsData.captureCurrency || currency,
+          status: refundsData.captureStatus || status,
+          updatedAt: now,
+        });
+      } catch (e) {
+        // Fallback: store minimal info
+        webhookRefunds.set(captureId, {
+          captureId,
+          total: refundsTotal != null ? refundsTotal : amount ? Math.abs(Number(amount)) : null,
+          currency,
+          status,
+          updatedAt: now,
+        });
+      }
+
+      return res.json({ ok: true });
+    }
+
+    res.json({ ok: true, ignored: true });
+  }),
+);
+
+// Read webhook snapshot for a capture
 app.get(
-  "/api/local/transactions",
+  "/api/admin/webhooks/refunds/:captureId",
+  asyncHandler(async (req, res) => {
+    const { captureId } = req.params;
+    const entry = webhookRefunds.get(captureId);
+    res.json({ ok: true, data: entry || null });
+  }),
+);
+
+// Read webhook capture snapshot (real-time capture events)
+app.get(
+  "/api/admin/webhooks/captures/:captureId",
+  asyncHandler(async (req, res) => {
+    const { captureId } = req.params;
+    const entry = webhookCaptures.get(captureId);
+    res.json({ ok: true, data: entry || null });
+  }),
+);
+
+// List all webhook capture snapshots (real-time captures)
+app.get(
+  "/api/admin/webhooks/captures",
   asyncHandler(async (_req, res) => {
-    const entries = await listEntries();
-    res.json({ ok: true, entries });
+    res.json({ ok: true, data: Array.from(webhookCaptures.values()) });
   }),
 );
 
