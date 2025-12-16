@@ -36,6 +36,7 @@ This project demonstrates a complete PayPal payment flow including:
 - `GET /v2/payments/captures/{id}/refunds`
 - `POST /v1/notifications/verify-webhook-signature` (webhook verification)
 - Webhook events: `PAYMENT.CAPTURE.COMPLETED`, `PAYMENT.CAPTURE.REFUNDED`, `PAYMENT.CAPTURE.PARTIALLY_REFUNDED`
+- Webhook capture listing: `GET https://tam-technical-assessment.onrender.com/api/admin/webhooks/captures`
 
 ## 3. Configuration & Testing Setup
 
@@ -69,6 +70,7 @@ Shipping costs are calculated after buyer approval using the postal code provide
 
 ### Webhooks for Real-Time Refunds
 PayPal webhooks are received at `/api/webhooks/paypal` (signature verified with `PAYPAL_WEBHOOK_ID`). The backoffice reads `/api/admin/webhooks/refunds/:captureId` to display near real-time refund totals without local persistence.
+- Why webhooks: the reporting API alone introduced latency for refunds, and a temporary local JSON cache risked stale data. Webhooks push events immediately from PayPal, keep the merchant view in sync, and remove the need for local storage while still letting PayPal stay the single source of truth.
 
 ### Secure Payment Handling
 - OAuth 2.0 authentication handled server-side
