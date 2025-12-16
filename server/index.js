@@ -375,11 +375,11 @@ app.post(
       try {
         const refundsData = await fetchCaptureRefunds(captureId);
         const refunds = refundsData.refunds?.refunds || refundsData.refunds?.items || refundsData.refunds || [];
-        refundsTotal = refunds.reduce((s, r) => s + Math.abs(Number(r.amount?.value || 0)), 0);
+    refundsTotal = refunds.reduce((s, r) => s + Math.abs(Number(r.amount?.value || 0)), 0);
 
-        if (refundsTotal == null || refundsTotal <= 0) {
-          if (amount != null) {
-            refundsTotal = Math.abs(Number(amount));
+    if (refundsTotal == null || refundsTotal <= 0) {
+      if (amount != null) {
+        refundsTotal = Math.abs(Number(amount));
           } else if (refundId) {
             try {
               const { data: refundDetail } = await getRefund(refundId);
@@ -389,17 +389,25 @@ app.post(
               // ignore detail failure
             }
           }
-        }
+    }
 
-        webhookRefunds.set(captureId, {
-          captureId,
-          total: refundsTotal,
-          currency: refundsData.captureCurrency || currency,
-          status: refundsData.captureStatus || status,
-          orderID: refundsData.captureOrderID || resource?.supplementary_data?.related_ids?.order_id || null,
-          refundId: refundId || null,
-          updatedAt: now,
-        });
+    webhookRefunds.set(captureId, {
+      captureId,
+      total: refundsTotal,
+      currency: refundsData.captureCurrency || currency,
+      status: refundsData.captureStatus || status,
+      orderID:
+        refundsData.captureOrderID ||
+        resource?.supplementary_data?.related_ids?.order_id ||
+        (resource.links || []).find((l) => l.rel === "up" && l.href?.includes("/captures/"))
+          ? resource.links.find((l) => l.rel === "up" && l.href.includes("/captures/")).href
+              .split("/")
+              .pop()
+          : webhookCaptures.get(captureId)?.orderID ||
+            null,
+      refundId: refundId || null,
+      updatedAt: now,
+    });
 
         console.log("[WEBHOOK] stored refund", captureId, "total=", refundsTotal);
       } catch (e) {
