@@ -1,9 +1,7 @@
 (() => {
   const SERVER_BASE =
     window.SERVER_BASE ||
-    (window.location.hostname === "localhost"
-      ? "https://tam-technical-assessment.onrender.com"
-      : window.location.origin);
+    (window.location.hostname === "localhost" ? "http://localhost:3001" : window.location.origin);
 
   const fmt = (amount) => `${CURRENCY} ${Number(amount).toFixed(2)}`;
   const q = (id) => document.getElementById(id);
@@ -39,6 +37,8 @@
   const cardStatus = q("cardStatus");
   const cardPayBtn = q("cardPayBtn");
   const editBuyerBtn = q("editBuyerBtn");
+  let buyerSavedOnce = false;
+  let lastBuyerSaveTime = null;
 
   async function fetchJson(url, options) {
     const res = await fetch(url, options);
@@ -159,7 +159,13 @@
       return;
     }
     buyerInfo = info;
-    setNotice(buyerStatus, "success", "Buyer info saved. Choose a payment method below.");
+    const now = new Date();
+    lastBuyerSaveTime = now.toLocaleTimeString();
+    const msg = buyerSavedOnce
+      ? `Buyer info updated at ${lastBuyerSaveTime}. Choose a payment method below.`
+      : `Buyer info saved at ${lastBuyerSaveTime}. Choose a payment method below.`;
+    buyerSavedOnce = true;
+    setNotice(buyerStatus, "success", msg);
     paymentSection?.classList.remove("hidden");
     paymentSection?.scrollIntoView({ behavior: "smooth", block: "start" });
     hide(globalStatus);
@@ -167,7 +173,9 @@
     hide(cardStatus);
   };
 
-  editBuyerBtn.onclick = () => q("fullName")?.scrollIntoView({ behavior: "smooth", block: "center" });
+  if (editBuyerBtn) {
+    editBuyerBtn.onclick = () => q("fullName")?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }
 
   paypal
     .Buttons({

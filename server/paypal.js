@@ -101,7 +101,15 @@ function normalizeBuyerInfo(buyerInfo) {
   };
 }
 
-export async function createOrder({ currency = "USD", amount = "10.00", buyerInfo } = {}) {
+export async function createOrder({ currency, amount, buyerInfo } = {}) {
+  if (amount == null || String(amount).trim() === "") {
+    const err = new Error("Missing amount for order creation");
+    err.status = 400;
+    throw err;
+  }
+
+  const cur = currency || "USD";
+  const amt = String(amount).trim();
   const token = await getAccessToken();
   const norm = normalizeBuyerInfo(buyerInfo);
 
@@ -111,17 +119,17 @@ export async function createOrder({ currency = "USD", amount = "10.00", buyerInf
       {
         reference_id: "default",
         amount: {
-          currency_code: currency,
-          value: amount,
+          currency_code: cur,
+          value: amt,
           breakdown: {
-            item_total: { currency_code: currency, value: amount },
+            item_total: { currency_code: cur, value: amt },
           },
         },
         items: [
           {
             name: "Demo Item",
             quantity: "1",
-            unit_amount: { currency_code: currency, value: amount },
+            unit_amount: { currency_code: cur, value: amt },
           },
         ],
       },

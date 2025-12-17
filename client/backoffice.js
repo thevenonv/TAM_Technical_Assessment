@@ -1,8 +1,6 @@
 const SERVER_BASE =
   window.SERVER_BASE ||
-  (window.location.hostname === "localhost"
-    ? "https://tam-technical-assessment.onrender.com"
-    : window.location.origin);
+  (window.location.hostname === "localhost" ? "http://localhost:3001" : window.location.origin);
 
 const tbody = document.getElementById("tbody");
 const refreshBtn = document.getElementById("refreshBtn");
