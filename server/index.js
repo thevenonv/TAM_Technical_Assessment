@@ -16,6 +16,15 @@ import {
   listTransactions,
 } from "./paypal.js";
 
+// Static product catalog to enforce pricing server-side
+const PRODUCT_CATALOG = {
+  hoodie: { name: "Urban Hoodie", price: "44.99" },
+  cap: { name: "Everyday Cap", price: "19.90" },
+  backpack: { name: "Minimal Backpack", price: "30.00" },
+  sneakers: { name: "Running Sneakers", price: "49.50" },
+  bottle: { name: "Steel Water Bottle", price: "12.00" },
+};
+
 const webhookRefunds = new Map(); // captureId -> { captureId, total, currency, status, refundId, updatedAt }
 const webhookCaptures = new Map(); // captureId -> { captureId, orderID, status, amount, currency, createdAt, updatedAt }
 
@@ -175,12 +184,37 @@ function normalizeAmount(amount) {
   return { value: n.toFixed(2) };
 }
 
+function computeShipping({ postal_code, admin_area_1 }) {
+  const zip = String(postal_code || "").trim();
+  const zip5 = zip.match(/\d{5}/)?.[0];
+  const stateCode = String(admin_area_1 || "").trim().toUpperCase();
+
+  if (!zip5) return "7.99";
+  if (["AK", "HI"].includes(stateCode)) return "19.99";
+  if (["PR", "VI", "GU", "AS", "MP"].includes(stateCode)) return "24.99";
+
+  const first = zip5[0];
+  if (["0", "1", "2"].includes(first)) return "5.99";
+  if (["3", "4"].includes(first)) return "7.49";
+  if (["5", "6"].includes(first)) return "9.49";
+  if (["7", "8", "9"].includes(first)) return "11.99";
+  return "7.99";
+}
+
 app.post(
   "/api/orders",
   asyncHandler(async (req, res) => {
-    const { currency = "USD", amount = "10.00", sku, name, buyerInfo } = req.body || {};
+    const { currency = "USD", sku, buyerInfo } = req.body || {};
+    const product = PRODUCT_CATALOG[sku];
+    if (!product) {
+      return res.status(400).json({ error: "Invalid sku" });
+    }
+    const amount = product.price;
+    const name = product.name;
     const { data, debugId } = await createOrder({ currency, amount, buyerInfo });
-    res.status(201).json({ orderID: data.id, status: data.status, debugId, meta: { sku, name }, raw: data });
+    res
+      .status(201)
+      .json({ orderID: data.id, status: data.status, debugId, meta: { sku, name, amount }, raw: data });
   })
 );
 
@@ -198,14 +232,20 @@ app.patch(
   "/api/orders/:orderID",
   asyncHandler(async (req, res) => {
     const { orderID } = req.params;
-    const { currency = "USD", itemTotal, shippingValue } = req.body || {};
-    if (!itemTotal || !shippingValue) {
-      return res.status(400).json({
-        error: 'Missing itemTotal or shippingValue. Example: { "itemTotal":"10.00", "shippingValue":"4.99" }',
-      });
-    }
+
+    // Always recompute shipping server-side to avoid client tampering
+    const { data: order } = await getOrder(orderID);
+    const pu = order?.purchase_units?.[0];
+    const address = pu?.shipping?.address;
+    const itemTotal = pu?.amount?.value;
+    const currency = pu?.amount?.currency_code || "USD";
+
+    if (!address) return res.status(400).json({ error: "Shipping address missing on order" });
+    if (!itemTotal) return res.status(400).json({ error: "Order amount missing" });
+
+    const shippingValue = computeShipping(address);
     const { data, debugId } = await updateOrderShipping({ orderID, currency, itemTotal, shippingValue });
-    res.json({ ok: true, debugId, raw: data });
+    res.json({ ok: true, debugId, shippingValue, itemTotal, currency, raw: data });
   })
 );
 
@@ -260,6 +300,18 @@ app.post(
 
     const parsedAmount = normalizeAmount(amount);
     if (parsedAmount && parsedAmount.error) return res.status(400).json({ error: parsedAmount.error });
+
+    // Prevent over-refund by checking capture amount before calling PayPal
+    const { data: capDetail } = await getCaptureDetails(captureId);
+    const capAmount = capDetail?.amount?.value ? Number(capDetail.amount.value) : null;
+    const capCurrency = capDetail?.amount?.currency_code || "USD";
+    if (parsedAmount && capAmount != null && Number(parsedAmount.value) > capAmount) {
+      return res.status(400).json({
+        error: "Refund amount exceeds captured amount",
+        captureAmount: capAmount.toFixed(2),
+        currency: capCurrency,
+      });
+    }
 
     const { data, debugId } = await refundCapture({ captureId, amount: parsedAmount ? parsedAmount.value : undefined });
     res.json({ ok: true, debugId, refundId: data.id, refund: data });

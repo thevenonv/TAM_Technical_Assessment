@@ -6,8 +6,8 @@ const SERVER_BASE =
 
 const params = new URLSearchParams(window.location.search);
 const orderID = params.get("orderID");
-const itemTotal = params.get("itemTotal");
-const currency = params.get("currency") || "USD";
+let itemTotal = null;
+let currency = "USD";
 const sku = params.get("sku") || "";
 const name = params.get("name") || "";
 
@@ -26,29 +26,15 @@ const log = (x) =>
   (logEl.textContent += (typeof x === "string" ? x : JSON.stringify(x, null, 2)) + "\n");
 const money = (x) => `${currency} ${Number(x).toFixed(2)}`;
 
-function computeShipping(postalCode, stateCode) {
-  const zip = String(postalCode || "").trim();
-  const zip5 = zip.match(/\d{5}/)?.[0];
-  if (!zip5) return "7.99";
-  const st = (stateCode || "").toUpperCase();
-  if (["AK", "HI"].includes(st)) return "19.99";
-  if (["PR", "VI", "GU", "AS", "MP"].includes(st)) return "24.99";
-  const first = zip5[0];
-  if (["0", "1", "2"].includes(first)) return "5.99";
-  if (["3", "4"].includes(first)) return "7.49";
-  if (["5", "6"].includes(first)) return "9.49";
-  if (["7", "8", "9"].includes(first)) return "11.99";
-  return "7.99";
-}
-
 async function loadOrder() {
   const res = await fetch(`${SERVER_BASE}/api/orders/${orderID}`);
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || "Get order failed");
 
   const address = data.address || {};
-  const shippingValue = computeShipping(address.postal_code, address.admin_area_1);
-  const total = (Number(itemTotal) + Number(shippingValue)).toFixed(2);
+  const pu = data.order?.purchase_units?.[0] || {};
+  if (pu.amount?.value) itemTotal = pu.amount.value;
+  if (pu.amount?.currency_code) currency = pu.amount.currency_code;
 
   orderIdEl.textContent = orderID;
   productEl.textContent = name ? `${name}${sku ? ` (${sku})` : ""}` : sku || "-";
@@ -57,22 +43,25 @@ async function loadOrder() {
       address.admin_area_1 || ""
     } ${address.postal_code || ""} ${address.country_code || ""}`.trim() || "(not provided)";
   itemEl.textContent = money(itemTotal);
-  shipEl.textContent = money(shippingValue);
-  totalEl.textContent = money(total);
-
-  confirmBtn.disabled = false;
-  return { shippingValue };
+  shipEl.textContent = "Loading...";
+  totalEl.textContent = "-";
 }
 
-async function patchShipping(shippingValue) {
+async function patchShipping() {
   const res = await fetch(`${SERVER_BASE}/api/orders/${orderID}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ currency, itemTotal, shippingValue }),
+    body: JSON.stringify({}),
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || "Patch failed");
-  log({ patched: true, debugId: data.debugId });
+  const shippingValue =
+    data.shippingValue || data.raw?.purchase_units?.[0]?.amount?.breakdown?.shipping?.value || null;
+  const currencyResp = data.currency || currency;
+  if (data.itemTotal) itemTotal = data.itemTotal;
+  if (currencyResp) currency = currencyResp;
+  log({ patched: true, shippingValue, debugId: data.debugId });
+  return shippingValue;
 }
 
 async function capture() {
@@ -88,12 +77,16 @@ async function capture() {
   backBtn.onclick = () => (window.location.href = "index.html");
 
   try {
-    const { shippingValue } = await loadOrder();
+    await loadOrder();
+    const shippingValue = await patchShipping();
+    if (shippingValue == null) throw new Error("Shipping value unavailable");
+    shipEl.textContent = money(shippingValue);
+    totalEl.textContent = money((Number(itemTotal) + Number(shippingValue)).toFixed(2));
+    confirmBtn.disabled = false;
     confirmBtn.onclick = async () => {
       confirmBtn.disabled = true;
       confirmBtn.textContent = "Processing...";
       try {
-        await patchShipping(shippingValue);
         await capture();
         confirmBtn.textContent = "Done";
       } catch (e) {

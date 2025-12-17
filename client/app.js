@@ -137,8 +137,6 @@
   function goToReview(orderID) {
     window.location.href =
       `review.html?orderID=${encodeURIComponent(orderID)}` +
-      `&itemTotal=${encodeURIComponent(selected.price)}` +
-      `&currency=${encodeURIComponent(CURRENCY)}` +
       `&sku=${encodeURIComponent(selected.id)}` +
       `&name=${encodeURIComponent(selected.name)}`;
   }
