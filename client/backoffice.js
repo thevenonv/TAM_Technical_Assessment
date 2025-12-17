@@ -1,12 +1,16 @@
 const SERVER_BASE =
   window.SERVER_BASE ||
-  (window.location.hostname === "localhost" ? "http://localhost:3001" : window.location.origin);
+  (window.location.hostname === "localhost"
+    ? "https://tam-technical-assessment.onrender.com"
+    : window.location.origin);
 
 const tbody = document.getElementById("tbody");
 const refreshBtn = document.getElementById("refreshBtn");
 const filterSellBtn = document.getElementById("filterSell");
 const filterRefundsBtn = document.getElementById("filterRefunds");
 const pageSizeSelect = document.getElementById("pageSize");
+const thOrder = document.getElementById("th-order");
+const thCapture = document.getElementById("th-capture");
 
 let flowFilter = "sell"; // "sell" => positive tx, "refund" => negative tx
 let maxRows = Number(pageSizeSelect?.value) || 5;
@@ -467,6 +471,15 @@ function setFlowFilter(next) {
   if (filterSellBtn && filterRefundsBtn) {
     filterSellBtn.classList.toggle("active", next === "sell");
     filterRefundsBtn.classList.toggle("active", next === "refund");
+  }
+  if (thOrder && thCapture) {
+    if (flowFilter === "refund") {
+      thOrder.textContent = "Capture ID";
+      thCapture.textContent = "Refund ID";
+    } else {
+      thOrder.textContent = "Order";
+      thCapture.textContent = "Capture ID";
+    }
   }
   loadTransactions();
 }
